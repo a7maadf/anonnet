@@ -123,10 +123,11 @@ pub enum TransactionType {
         proof: RelayProof,
     },
 
-    /// Genesis transaction (initial credit distribution)
+    /// Genesis transaction (initial credit distribution based on PoW)
     Genesis {
         recipient: NodeId,
         amount: Credits,
+        pow: crate::identity::ProofOfWork,
     },
 }
 
@@ -221,6 +222,12 @@ pub enum TransactionError {
 
     #[error("Invalid sender")]
     InvalidSender,
+
+    #[error("Credit transfers between identities are not allowed")]
+    TransferNotAllowed,
+
+    #[error("Invalid Proof of Work")]
+    InvalidPoW,
 }
 
 #[cfg(test)]

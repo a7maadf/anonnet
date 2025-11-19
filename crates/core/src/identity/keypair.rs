@@ -11,7 +11,9 @@ pub struct KeyPair {
 }
 
 impl KeyPair {
-    /// Generate a new random keypair
+    /// Generate a new random keypair (without PoW)
+    ///
+    /// Note: For production use, prefer `generate_with_pow()` to receive initial credits
     pub fn generate() -> Self {
         use rand::RngCore;
         let mut rng = OsRng;
@@ -25,6 +27,36 @@ impl KeyPair {
             signing_key,
             verifying_key,
         }
+    }
+
+    /// Generate a new keypair with Proof of Work
+    ///
+    /// This performs computational work to prove node capability and earn initial credits.
+    /// Higher difficulty = more credits but takes longer to generate.
+    ///
+    /// Returns: (KeyPair, ProofOfWork)
+    ///
+    /// Note: PoW is generated for the NodeID (hash of public key), not the public key itself
+    pub fn generate_with_pow(difficulty: u8) -> (Self, super::ProofOfWork) {
+        use rand::RngCore;
+        let mut rng = OsRng;
+        let mut secret_bytes = [0u8; 32];
+        rng.fill_bytes(&mut secret_bytes);
+
+        let signing_key = SigningKey::from_bytes(&secret_bytes);
+        let verifying_key = signing_key.verifying_key();
+
+        let keypair = Self {
+            signing_key,
+            verifying_key,
+        };
+
+        // Mine PoW for the NodeID (hash of public key)
+        let node_id = super::NodeId::from_public_key(&keypair.public_key());
+        let node_id_bytes = *node_id.as_bytes();
+        let pow = super::ProofOfWork::mine(&node_id_bytes, difficulty);
+
+        (keypair, pow)
     }
 
     /// Create a keypair from a secret key

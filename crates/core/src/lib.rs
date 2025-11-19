@@ -6,7 +6,8 @@ pub mod peer;
 pub mod protocol;
 
 pub use identity::{
-    Distance, ExportableIdentity, Identity, KeyPair, KeyPairError, NodeId, NodeIdError, PublicKey,
+    Distance, ExportableIdentity, Identity, KeyPair, KeyPairError, NodeId, NodeIdError,
+    ProofOfWork, PublicKey,
 };
 pub use protocol::*;
 
