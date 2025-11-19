@@ -1,4 +1,4 @@
-use crate::dht::{BucketEntry, RoutingTable};
+use crate::dht::RoutingTable;
 use crate::identity::NodeId;
 use anonnet_common::{routing, Reputation};
 use rand::seq::SliceRandom;

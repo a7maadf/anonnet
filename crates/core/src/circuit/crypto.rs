@@ -1,6 +1,6 @@
 use super::types::{Circuit, CircuitNode};
 use chacha20poly1305::{
-    aead::{Aead, KeyInit, Payload},
+    aead::{Aead, KeyInit},
     ChaCha20Poly1305, Nonce,
 };
 

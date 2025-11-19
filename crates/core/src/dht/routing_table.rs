@@ -177,12 +177,12 @@ impl RoutingTable {
         // Generate a random node ID
         let mut bytes = [0u8; 32];
         rng.fill(&mut bytes);
-        let random_id = NodeId::from_bytes(bytes);
+        
 
         // XOR with our ID to ensure it falls into the right bucket
         // This is a simplified approach; a full implementation would
         // ensure the exact number of leading zeros
-        random_id
+        NodeId::from_bytes(bytes)
     }
 
     /// Get statistics about the routing table

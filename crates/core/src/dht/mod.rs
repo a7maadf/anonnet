@@ -8,7 +8,6 @@ pub use routing_table::{InsertError, InsertResult, RoutingTable, RoutingTableSta
 
 use crate::identity::{NodeId, PublicKey};
 use anonnet_common::{dht, AnonNetError, NetworkAddress, Result};
-use std::collections::HashMap;
 
 /// DHT (Distributed Hash Table) for peer discovery
 ///

@@ -109,7 +109,7 @@ impl CreditLedger {
             }
 
             TransactionType::RelayReward {
-                relay_node,
+                
                 proof,
                 amount,
                 ..

@@ -1,5 +1,5 @@
 use super::crypto::OnionCrypto;
-use super::path_selection::{PathSelectionCriteria, PathSelectionError, PathSelector};
+use super::path_selection::{PathSelectionCriteria, PathSelector};
 use super::types::{Circuit, CircuitId, CircuitNode, CircuitPurpose, CircuitState};
 use crate::dht::RoutingTable;
 use crate::identity::NodeId;
@@ -73,7 +73,7 @@ impl CircuitManager {
         // Track by purpose
         self.circuits_by_purpose
             .entry(purpose)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(circuit_id);
 
         Ok(circuit_id)
