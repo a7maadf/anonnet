@@ -133,6 +133,12 @@ pub enum MessagePayload {
     FindNode(FindNodeMessage),
     NodesFound(NodesFoundMessage),
 
+    // DHT storage
+    Store(StoreMessage),
+    StoreResponse(StoreResponseMessage),
+    FindValue(FindValueMessage),
+    ValueFound(ValueFoundMessage),
+
     // Circuit management
     CreateCircuit(CreateCircuitMessage),
     CircuitCreated(CircuitCreatedMessage),
@@ -160,6 +166,10 @@ impl MessagePayload {
             Self::Pong(_) => "pong",
             Self::FindNode(_) => "find_node",
             Self::NodesFound(_) => "nodes_found",
+            Self::Store(_) => "store",
+            Self::StoreResponse(_) => "store_response",
+            Self::FindValue(_) => "find_value",
+            Self::ValueFound(_) => "value_found",
             Self::CreateCircuit(_) => "create_circuit",
             Self::CircuitCreated(_) => "circuit_created",
             Self::CircuitFailed(_) => "circuit_failed",
@@ -273,6 +283,78 @@ pub struct PeerInfo {
     pub public_key: PublicKey,
     pub addresses: Vec<NetworkAddress>,
     pub last_seen: Timestamp,
+}
+
+// ============================================================================
+// DHT Storage Messages
+// ============================================================================
+
+/// Store a value in the DHT
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoreMessage {
+    /// Key to store under (32-byte hash)
+    pub key: [u8; 32],
+
+    /// Value to store
+    pub value: Vec<u8>,
+
+    /// Publisher's node ID
+    pub publisher: NodeId,
+
+    /// TTL in seconds
+    pub ttl: u64,
+
+    /// Optional signature
+    pub signature: Option<Signature64>,
+}
+
+/// Response to a store request
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoreResponseMessage {
+    /// Whether the store succeeded
+    pub success: bool,
+
+    /// Optional error message
+    pub error: Option<String>,
+}
+
+/// Find a value in the DHT
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FindValueMessage {
+    /// Key to find
+    pub key: [u8; 32],
+}
+
+/// Response with found values
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValueFoundMessage {
+    /// Whether value was found
+    pub found: bool,
+
+    /// Found values (may be multiple from different publishers)
+    pub values: Vec<StoredValueMessage>,
+
+    /// If not found, closest nodes that might have it
+    pub closest_nodes: Vec<PeerInfo>,
+}
+
+/// Stored value in a message
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoredValueMessage {
+    /// The stored data
+    pub data: Vec<u8>,
+
+    /// Publisher's node ID
+    pub publisher: NodeId,
+
+    /// When it was stored (Unix timestamp)
+    pub stored_at: u64,
+
+    /// TTL in seconds
+    pub ttl: u64,
+
+    /// Optional signature
+    pub signature: Option<Signature64>,
 }
 
 // ============================================================================
