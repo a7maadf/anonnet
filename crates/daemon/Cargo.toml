@@ -1,0 +1,12 @@
+[package]
+name = "anonnet-daemon"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+anonnet-common = { path = "../common" }
+anonnet-core = { path = "../core" }
+tokio = { version = "1", features = ["full"] }
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"

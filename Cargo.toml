@@ -1,6 +1,13 @@
-[package]
-name = "anonnet"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = [
+    "crates/common",
+    "crates/core",
+    "crates/daemon",
+]
+resolver = "2"
 
-[dependencies]
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["a7maadf"]
+license = "MIT OR Apache-2.0"
