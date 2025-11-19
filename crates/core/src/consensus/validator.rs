@@ -1,7 +1,6 @@
 use crate::dht::RoutingTable;
 use crate::identity::NodeId;
 use anonnet_common::{Reputation, Timestamp};
-use rand::seq::SliceRandom;
 use rand::Rng;
 use std::collections::HashSet;
 
@@ -117,7 +116,7 @@ impl ValidatorSet {
 
         // Select 'count' validators using weighted random selection
         while selected.len() < count && selected.len() < candidates.len() {
-            let mut target = rng.gen_range(0..total_weight);
+            let target = rng.gen_range(0..total_weight);
             let mut cumulative = 0u64;
 
             for (node_id, reputation) in candidates {

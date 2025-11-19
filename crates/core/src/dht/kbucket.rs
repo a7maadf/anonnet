@@ -1,4 +1,4 @@
-use crate::identity::{Distance, NodeId, PublicKey};
+use crate::identity::{NodeId, PublicKey};
 use anonnet_common::{dht, NetworkAddress, Reputation, Timestamp};
 use std::collections::VecDeque;
 

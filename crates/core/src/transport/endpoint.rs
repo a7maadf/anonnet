@@ -152,14 +152,15 @@ pub struct EndpointConfig {
     pub bind_addr: SocketAddr,
 }
 
-impl EndpointConfig {
-    /// Create default configuration
-    pub fn default() -> Self {
+impl Default for EndpointConfig {
+    fn default() -> Self {
         Self {
             bind_addr: "0.0.0.0:0".parse().unwrap(),
         }
     }
+}
 
+impl EndpointConfig {
     /// Create configuration with specific bind address
     pub fn with_bind_addr(bind_addr: SocketAddr) -> Self {
         Self { bind_addr }
