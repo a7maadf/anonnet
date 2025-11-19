@@ -9,6 +9,7 @@
 use anyhow::Result;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing::{info, warn, Level};
 use tracing_subscriber;
 
@@ -62,6 +63,18 @@ async fn main() -> Result<()> {
 async fn run_proxy_mode() -> Result<()> {
     info!("Running in proxy mode");
 
+    // Create a lightweight node for proxy services
+    info!("Creating AnonNet node for proxy services...");
+    let config = NodeConfig::default();
+    let mut node = Node::new(config).await?;
+
+    // Start the node
+    node.start().await?;
+    info!("Node started");
+
+    // Wrap in Arc for sharing with proxies
+    let node = Arc::new(node);
+
     // Default proxy addresses
     let socks5_addr: SocketAddr = "127.0.0.1:9050".parse()?;
     let http_addr: SocketAddr = "127.0.0.1:8118".parse()?;
@@ -69,8 +82,8 @@ async fn run_proxy_mode() -> Result<()> {
     info!("SOCKS5 proxy will listen on: {}", socks5_addr);
     info!("HTTP proxy will listen on: {}", http_addr);
 
-    // Create and start proxy manager
-    let proxy_manager = ProxyManager::new(socks5_addr, http_addr);
+    // Create and start proxy manager with node
+    let proxy_manager = ProxyManager::new(socks5_addr, http_addr, node.clone());
     proxy_manager.start().await?;
 
     Ok(())
