@@ -61,6 +61,11 @@ impl NonceCounter {
     pub fn counter(&self) -> u64 {
         self.counter
     }
+
+    /// Get base nonce (for computing explicit nonces)
+    pub(crate) fn base(&self) -> [u8; 12] {
+        self.base
+    }
 }
 
 /// Ephemeral key pair for X25519 Diffie-Hellman
@@ -195,6 +200,42 @@ impl LayerCrypto {
     /// Get counter value (for monitoring)
     pub fn counter(&self) -> u64 {
         self.nonce_counter.counter()
+    }
+
+    /// Encrypt with an explicit nonce counter value (for relay cells with sequence numbers)
+    ///
+    /// This allows encryption with a specific sequence number instead of auto-incrementing,
+    /// which prevents nonce desynchronization when cells are lost or reordered.
+    pub fn encrypt_with_counter(&self, plaintext: &[u8], counter: u64) -> Result<Vec<u8>, CryptoError> {
+        let nonce_bytes = self.compute_nonce_for_counter(counter);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        self.cipher
+            .encrypt(nonce, plaintext)
+            .map_err(|_| CryptoError::EncryptionFailed)
+    }
+
+    /// Decrypt with an explicit nonce counter value (for relay cells with sequence numbers)
+    ///
+    /// This allows decryption with a specific sequence number instead of auto-incrementing,
+    /// which prevents nonce desynchronization when cells are lost or reordered.
+    pub fn decrypt_with_counter(&self, ciphertext: &[u8], counter: u64) -> Result<Vec<u8>, CryptoError> {
+        let nonce_bytes = self.compute_nonce_for_counter(counter);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        self.cipher
+            .decrypt(nonce, ciphertext)
+            .map_err(|_| CryptoError::DecryptionFailed)
+    }
+
+    /// Compute nonce for a specific counter value
+    fn compute_nonce_for_counter(&self, counter: u64) -> [u8; 12] {
+        let mut nonce = self.nonce_counter.base();
+        let counter_bytes = counter.to_le_bytes();
+        for (i, byte) in counter_bytes.iter().enumerate() {
+            nonce[4 + i] ^= byte;
+        }
+        nonce
     }
 }
 
