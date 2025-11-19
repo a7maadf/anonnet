@@ -101,6 +101,11 @@ impl RoutingTable {
         self.bucket(node_id).find_node(node_id)
     }
 
+    /// Find a node in the routing table (mutable)
+    pub fn find_node_mut(&mut self, node_id: &NodeId) -> Option<&mut BucketEntry> {
+        self.bucket_mut(node_id).find_node_mut(node_id)
+    }
+
     /// Get the K closest nodes to a target ID
     pub fn closest_nodes(&self, target: &NodeId, count: usize) -> Vec<BucketEntry> {
         let mut all_nodes = Vec::new();

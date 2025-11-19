@@ -284,7 +284,7 @@ mod tests {
             table.insert(node_id, keypair.public_key(), vec![addr]).ok();
 
             // Set varying reputations
-            if let Some(entry) = table.all_nodes().iter_mut().find(|e| e.node_id == node_id) {
+            if let Some(entry) = table.find_node_mut(&node_id) {
                 entry.reputation = Reputation::new((i * 10 + 50) as u32);
                 entry.accepts_relay = true;
             }

@@ -1,4 +1,5 @@
 pub mod circuit;
+pub mod consensus;
 pub mod dht;
 pub mod identity;
 pub mod peer;
@@ -25,3 +26,10 @@ pub use dht::{
 
 // Re-export peer types
 pub use peer::{PeerConnection, PeerManager, PeerManagerStats, PeerState};
+
+// Re-export consensus types
+pub use consensus::{
+    Block, BlockError, BlockHeader, Blockchain, CreditLedger, RelayProof, Transaction,
+    TransactionError, TransactionId, TransactionType, TransactionValidator, Validator,
+    ValidatorError, ValidatorSet,
+};
