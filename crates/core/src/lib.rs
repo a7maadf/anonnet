@@ -2,6 +2,7 @@ pub mod circuit;
 pub mod consensus;
 pub mod dht;
 pub mod identity;
+pub mod network;
 pub mod peer;
 pub mod protocol;
 pub mod service;
@@ -16,9 +17,9 @@ pub use protocol::*;
 // Re-export circuit types
 pub use circuit::{
     Circuit, CircuitCleanupStats, CircuitId, CircuitManager, CircuitManagerStats, CircuitNode,
-    CircuitPurpose, CircuitState, CryptoError, OnionCrypto, PathSelectionCriteria,
-    PathSelectionError, PathSelector, RelayAction, RelayCell, RelayCellType, RelayError,
-    RelayHandler,
+    CircuitPool, CircuitPoolConfig, CircuitPoolError, CircuitPoolStats, CircuitPurpose,
+    CircuitState, CryptoError, OnionCrypto, PathSelectionCriteria, PathSelectionError,
+    PathSelector, PoolStats, RelayAction, RelayCell, RelayCellType, RelayError, RelayHandler,
 };
 
 // Re-export DHT types
@@ -48,4 +49,10 @@ pub use service::{
     ConnectionInfo, DescriptorError, DirectoryError, IntroductionPoint, RendezvousError,
     RendezvousId, RendezvousManager, ServiceAddress, ServiceAddressError, ServiceDescriptor,
     ServiceDirectory,
+};
+
+// Re-export network types
+pub use network::{
+    BandwidthConfig, BandwidthEstimator, NetworkBandwidthStats, NodeBandwidthStats,
+    RateLimitConfig, RateLimitError, RateLimiter, RateLimitStats, RateLimitStatus,
 };
