@@ -4,6 +4,7 @@ pub mod dht;
 pub mod identity;
 pub mod peer;
 pub mod protocol;
+pub mod transport;
 
 pub use identity::{
     Distance, ExportableIdentity, Identity, KeyPair, KeyPairError, NodeId, NodeIdError,
@@ -33,4 +34,10 @@ pub use consensus::{
     Block, BlockError, BlockHeader, Blockchain, CreditLedger, RelayProof, Transaction,
     TransactionError, TransactionId, TransactionType, TransactionValidator, Validator,
     ValidatorError, ValidatorSet,
+};
+
+// Re-export transport types
+pub use transport::{
+    Connection, ConnectionError, ConnectionStats, Endpoint, EndpointConfig, EndpointError,
+    RecvStream, SendStream, StreamError,
 };
