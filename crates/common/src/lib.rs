@@ -1,5 +1,137 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+use serde::{Deserialize, Serialize};
+use std::fmt;
+use thiserror::Error;
+
+pub const NODE_ID_LEN: usize = 32;
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum DomainError {
+    #[error("invalid node id length: expected {expected}, got {actual}")]
+    InvalidNodeId { expected: usize, actual: usize },
+    #[error("insufficient credits: available {available}, required {required}")]
+    InsufficientCredits { available: u64, required: u64 },
+    #[error("credit overflow")]
+    CreditOverflow,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct NodeId([u8; NODE_ID_LEN]);
+
+impl NodeId {
+    pub fn from_bytes(bytes: [u8; NODE_ID_LEN]) -> Self {
+        Self(bytes)
+    }
+
+    pub fn as_bytes(&self) -> &[u8; NODE_ID_LEN] {
+        &self.0
+    }
+}
+
+impl fmt::Debug for NodeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "NodeId({})", hex::encode(self.0))
+    }
+}
+
+impl fmt::Display for NodeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", hex::encode(self.0))
+    }
+}
+
+impl From<[u8; NODE_ID_LEN]> for NodeId {
+    fn from(value: [u8; NODE_ID_LEN]) -> Self {
+        Self::from_bytes(value)
+    }
+}
+
+impl TryFrom<&[u8]> for NodeId {
+    type Error = DomainError;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        if value.len() != NODE_ID_LEN {
+            return Err(DomainError::InvalidNodeId {
+                expected: NODE_ID_LEN,
+                actual: value.len(),
+            });
+        }
+
+        let mut bytes = [0u8; NODE_ID_LEN];
+        bytes.copy_from_slice(value);
+        Ok(NodeId::from_bytes(bytes))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CreditBalance {
+    available: u64,
+}
+
+impl CreditBalance {
+    pub fn new(amount: u64) -> Self {
+        Self { available: amount }
+    }
+
+    pub fn available(&self) -> u64 {
+        self.available
+    }
+
+    pub fn credit(&mut self, amount: u64) -> Result<(), DomainError> {
+        self.available = self
+            .available
+            .checked_add(amount)
+            .ok_or(DomainError::CreditOverflow)?;
+        Ok(())
+    }
+
+    pub fn debit(&mut self, amount: u64) -> Result<(), DomainError> {
+        if self.available < amount {
+            return Err(DomainError::InsufficientCredits {
+                available: self.available,
+                required: amount,
+            });
+        }
+        self.available -= amount;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MessageKind {
+    Control,
+    Data,
+    Credit,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageEnvelope {
+    pub from: NodeId,
+    pub to: NodeId,
+    pub nonce: u64,
+    pub kind: MessageKind,
+    pub payload: Vec<u8>,
+    pub signature: Vec<u8>,
+}
+
+impl MessageEnvelope {
+    pub fn new(
+        from: NodeId,
+        to: NodeId,
+        nonce: u64,
+        kind: MessageKind,
+        payload: Vec<u8>,
+        signature: Vec<u8>,
+    ) -> Self {
+        Self {
+            from,
+            to,
+            nonce,
+            kind,
+            payload,
+            signature,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -7,8 +139,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+    fn node_id_rejects_wrong_length() {
+        let err = NodeId::try_from(&[1u8; 16][..]).unwrap_err();
+        assert!(matches!(err, DomainError::InvalidNodeId { .. }));
+    }
+
+    #[test]
+    fn credit_balance_updates() {
+        let mut balance = CreditBalance::new(100);
+        balance.credit(50).unwrap();
+        assert_eq!(balance.available(), 150);
+        balance.debit(25).unwrap();
+        assert_eq!(balance.available(), 125);
+    }
+
+    #[test]
+    fn message_envelope_serializes() {
+        let node = NodeId::from([1u8; NODE_ID_LEN]);
+        let envelope = MessageEnvelope::new(
+            node,
+            node,
+            1,
+            MessageKind::Data,
+            vec![0, 1, 2],
+            vec![9, 9],
+        );
+        let encoded = bincode::serialize(&envelope).unwrap();
+        let decoded: MessageEnvelope = bincode::deserialize(&encoded).unwrap();
+        assert_eq!(decoded, envelope);
     }
 }
