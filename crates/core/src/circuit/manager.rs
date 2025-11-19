@@ -56,13 +56,15 @@ impl CircuitManager {
         let mut circuit = Circuit::new(circuit_id, purpose);
 
         // Add nodes to circuit with encryption keys
+        // TODO: Replace with proper X25519 DH during circuit building protocol
         for node_id in path {
             if let Some(entry) = routing_table.find_node(&node_id) {
                 // Generate encryption keys for this hop
                 let enc_key = OnionCrypto::generate_key();
                 let dec_key = OnionCrypto::generate_key();
 
-                let node = CircuitNode::new(node_id, entry.public_key, enc_key, dec_key);
+                #[allow(deprecated)]
+                let node = CircuitNode::from_raw_keys(node_id, entry.public_key, enc_key, dec_key);
                 circuit.add_node(node);
             }
         }

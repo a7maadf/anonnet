@@ -7,7 +7,10 @@ use crate::circuit::{CircuitManager, CircuitPool, CircuitPoolConfig};
 use crate::consensus::{Block, Blockchain, CreditLedger, Transaction, TransactionType};
 use crate::dht::{BootstrapNode, RoutingTable, DHT};
 use crate::identity::{ExportableIdentity, Identity, KeyPair, NodeId, ProofOfWork};
-use crate::network::{BandwidthEstimator, RateLimiter, BandwidthConfig, RateLimitConfig};
+use crate::network::{
+    BandwidthEstimator, ConnectionManager, MessageDispatcher, RateLimiter, BandwidthConfig,
+    RateLimitConfig,
+};
 use crate::peer::PeerManager;
 use crate::service::{ServiceDirectory, RendezvousManager};
 use crate::transport::{Endpoint, EndpointConfig};
@@ -16,7 +19,7 @@ use anyhow::Result;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Main AnonNet node runtime
 ///
@@ -66,6 +69,12 @@ pub struct Node {
 
     /// QUIC endpoint
     endpoint: Option<Arc<Endpoint>>,
+
+    /// Connection manager
+    connection_manager: Option<Arc<ConnectionManager>>,
+
+    /// Message dispatcher
+    message_dispatcher: Arc<MessageDispatcher>,
 
     /// Whether the node is running
     running: Arc<RwLock<bool>>,
@@ -153,6 +162,9 @@ impl Node {
             RateLimitConfig::default(),
         ));
 
+        // Initialize message dispatcher
+        let message_dispatcher = Arc::new(MessageDispatcher::new(dht.clone()));
+
         Ok(Self {
             identity,
             pow,
@@ -169,6 +181,8 @@ impl Node {
             bandwidth_estimator,
             rate_limiter,
             endpoint: None,
+            connection_manager: None,
+            message_dispatcher,
             running: Arc::new(RwLock::new(false)),
         })
     }
@@ -231,6 +245,21 @@ impl Node {
         self.rendezvous_manager.clone()
     }
 
+    /// Get routing table (for circuit building)
+    pub fn routing_table(&self) -> Arc<RwLock<RoutingTable>> {
+        self.routing_table.clone()
+    }
+
+    /// Get circuit manager
+    pub fn circuit_manager(&self) -> Arc<RwLock<CircuitManager>> {
+        self.circuit_manager.clone()
+    }
+
+    /// Get connection manager
+    pub fn connection_manager(&self) -> Option<Arc<ConnectionManager>> {
+        self.connection_manager.clone()
+    }
+
     /// Load or generate node identity
     async fn load_or_generate_identity(config: &NodeConfig) -> Result<(Identity, ProofOfWork)> {
         let data_dir = std::path::PathBuf::from(&config.data_dir);
@@ -283,8 +312,17 @@ impl Node {
         let endpoint_config = EndpointConfig {
             bind_addr: listen_addr,
         };
-        let endpoint = Endpoint::new(endpoint_config).await?;
-        self.endpoint = Some(Arc::new(endpoint));
+        let endpoint = Arc::new(Endpoint::new(endpoint_config).await?);
+
+        // Initialize connection manager with the endpoint
+        let connection_manager = Arc::new(ConnectionManager::new(
+            self.identity.clone(),
+            endpoint.clone(),
+            true, // Accept relay traffic
+        ));
+
+        self.endpoint = Some(endpoint);
+        self.connection_manager = Some(connection_manager);
         Ok(())
     }
 
@@ -316,10 +354,67 @@ impl Node {
         &self,
         bootstrap: &str,
     ) -> Result<()> {
-        // TODO: Implement actual connection logic
-        // For now, just add to routing table
-        info!("Would connect to bootstrap: {}", bootstrap);
-        Ok(())
+        let connection_manager = match &self.connection_manager {
+            Some(cm) => cm,
+            None => {
+                warn!("Connection manager not initialized");
+                return Ok(());
+            }
+        };
+
+        // Parse bootstrap address
+        let addr: SocketAddr = bootstrap.parse()?;
+
+        info!("Connecting to bootstrap node: {}", addr);
+
+        // Connect to bootstrap node
+        match connection_manager.connect_to_peer(addr).await {
+            Ok(handler) => {
+                info!("Successfully connected to bootstrap node");
+
+                // Start message handling for this connection
+                let dispatcher = self.message_dispatcher.clone();
+                tokio::spawn(async move {
+                    loop {
+                        match handler.connection().accept_bi().await {
+                            Ok((mut send, mut recv)) => {
+                                // Receive message
+                                match crate::network::MessageCodec::recv_message(&mut recv).await {
+                                    Ok(Some(message)) => {
+                                        // Dispatch message
+                                        match dispatcher.dispatch(message).await {
+                                            Ok(Some(response)) => {
+                                                // Send response
+                                                let _ = crate::network::MessageCodec::send_message_and_finish(send, &response).await;
+                                            }
+                                            Ok(None) => {
+                                                // No response needed
+                                                let _ = send.finish().await;
+                                            }
+                                            Err(e) => {
+                                                error!("Error dispatching message: {}", e);
+                                            }
+                                        }
+                                    }
+                                    Ok(None) => break,
+                                    Err(e) => {
+                                        debug!("Error receiving message: {}", e);
+                                        break;
+                                    }
+                                }
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                });
+
+                Ok(())
+            }
+            Err(e) => {
+                warn!("Failed to connect to bootstrap: {}", e);
+                Err(e)
+            }
+        }
     }
 
     /// Start background maintenance tasks
@@ -345,6 +440,64 @@ impl Node {
                 bandwidth_estimator.update_network_stats().await;
             }
         });
+
+        // Incoming connection acceptance task
+        if let Some(connection_manager) = &self.connection_manager {
+            let running = self.running.clone();
+            let connection_manager = connection_manager.clone();
+            let dispatcher = self.message_dispatcher.clone();
+
+            tokio::spawn(async move {
+                while *running.read().await {
+                    match connection_manager.accept_connection().await {
+                        Ok(handler) => {
+                            info!("Accepted new peer connection");
+
+                            // Start message handling for this connection
+                            let dispatcher = dispatcher.clone();
+                            tokio::spawn(async move {
+                                loop {
+                                    match handler.connection().accept_bi().await {
+                                        Ok((mut send, mut recv)) => {
+                                            // Receive message
+                                            match crate::network::MessageCodec::recv_message(&mut recv).await {
+                                                Ok(Some(message)) => {
+                                                    // Dispatch message
+                                                    match dispatcher.dispatch(message).await {
+                                                        Ok(Some(response)) => {
+                                                            // Send response
+                                                            let _ = crate::network::MessageCodec::send_message_and_finish(send, &response).await;
+                                                        }
+                                                        Ok(None) => {
+                                                            // No response needed
+                                                            let _ = send.finish().await;
+                                                        }
+                                                        Err(e) => {
+                                                            error!("Error dispatching message: {}", e);
+                                                        }
+                                                    }
+                                                }
+                                                Ok(None) => break,
+                                                Err(e) => {
+                                                    debug!("Error receiving message: {}", e);
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        Err(_) => break,
+                                    }
+                                }
+                            });
+                        }
+                        Err(e) => {
+                            debug!("Error accepting connection: {}", e);
+                            // Small delay before retrying
+                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                        }
+                    }
+                }
+            });
+        }
 
         info!("Background tasks started");
     }

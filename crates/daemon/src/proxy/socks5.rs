@@ -159,38 +159,97 @@ async fn handle_client(mut stream: TcpStream, node: Arc<Node>) -> Result<()> {
     debug!("SOCKS5: Connecting to .anon service: {}", hostname);
 
     // Route through AnonNet circuit to .anon service
-    // This is now wired to use the Node's components
     let service_addr = ServiceAddress::from_hostname(&hostname)
         .map_err(|e| anyhow!("Invalid .anon address: {}", e))?;
 
     // Access Node components for routing
     let service_directory = node.service_directory();
-    let _circuit_pool = node.circuit_pool();
-    let _rendezvous_manager = node.rendezvous_manager();
+    let circuit_pool = node.circuit_pool();
+    let routing_table = node.routing_table();
+    let circuit_manager = node.circuit_manager();
+    let connection_manager = node.connection_manager()
+        .ok_or_else(|| anyhow!("Connection manager not initialized"))?;
 
     debug!("SOCKS5: Looking up service descriptor for {}", service_addr);
 
     // Step 1: Lookup service descriptor from DHT (via service directory)
-    match service_directory.lookup_descriptor(&service_addr).await {
-        Ok(_descriptor) => {
-            // Step 2: Acquire circuit from pool
-            // Step 3: Establish rendezvous connection
-            // Step 4: Proxy traffic through circuit
+    let _descriptor = service_directory.lookup_descriptor(&service_addr).await
+        .map_err(|e| {
+            warn!("SOCKS5: Service descriptor not found for {}: {}", service_addr, e);
+            e
+        })?;
 
-            // NOTE: Circuit-based routing is implemented but requires a running network
-            // with peers, DHT nodes, and published service descriptors.
-            // For now, return descriptive error showing integration is in place.
-            send_reply(&mut stream, HOST_UNREACHABLE).await?;
-            return Err(anyhow!(
-                ".anon service found, but circuit routing requires active network (peers + published services)"
-            ));
-        }
-        Err(_) => {
-            warn!("SOCKS5: Service descriptor not found for {}", service_addr);
-            send_reply(&mut stream, HOST_UNREACHABLE).await?;
-            return Err(anyhow!("Service descriptor not found for {}", service_addr));
-        }
-    }
+    debug!("SOCKS5: Service descriptor found");
+
+    // Step 2: Acquire circuit from pool
+    let circuit_id = {
+        use anonnet_core::circuit::CircuitPurpose;
+        let rt = routing_table.read().await;
+
+        circuit_pool.acquire_circuit(CircuitPurpose::General, &*rt).await
+            .map_err(|e| {
+                warn!("SOCKS5: Failed to acquire circuit: {}", e);
+                anyhow!("Failed to acquire circuit: {}. Ensure DHT has discovered peers first.", e)
+            })?
+    };
+
+    debug!("SOCKS5: Acquired circuit {}", circuit_id);
+
+    // Step 3: Get the circuit and first hop handler
+    let (circuit_arc, first_hop_id) = {
+        let manager = circuit_manager.read().await;
+        let circuit = manager.get_circuit(&circuit_id)
+            .ok_or_else(|| anyhow!("Circuit not found"))?;
+
+        let first_hop_id = circuit.entry_node()
+            .ok_or_else(|| anyhow!("Circuit has no entry node"))?
+            .node_id;
+
+        // Clone the circuit into an Arc<Mutex> for the stream
+        use tokio::sync::Mutex;
+        let circuit_arc = std::sync::Arc::new(Mutex::new(circuit.clone()));
+
+        (circuit_arc, first_hop_id)
+    };
+
+    // Get connection handler for first hop
+    let first_hop_handler = connection_manager.get_connection(&first_hop_id)
+        .ok_or_else(|| anyhow!("No connection to first hop"))?;
+
+    debug!("SOCKS5: Creating circuit stream");
+
+    // Step 4: Create circuit stream
+    use anonnet_core::circuit::CircuitStream;
+    let stream_id = 1; // TODO: Proper stream ID allocation
+    let mut circuit_stream = CircuitStream::new(
+        circuit_id,
+        stream_id,
+        first_hop_handler,
+        circuit_arc,
+    );
+
+    // Step 5: Begin the stream to the target
+    circuit_stream.begin(&target).await
+        .map_err(|e| {
+            warn!("SOCKS5: Failed to begin circuit stream: {}", e);
+            e
+        })?;
+
+    debug!("SOCKS5: Circuit stream established");
+
+    // Send SUCCESS reply to SOCKS5 client
+    send_reply(&mut stream, SUCCESS).await?;
+
+    // Step 6: Relay traffic bidirectionally
+    use anonnet_core::circuit::relay_bidirectional;
+    relay_bidirectional(stream, circuit_stream).await
+        .map_err(|e| {
+            warn!("SOCKS5: Relay error: {}", e);
+            e
+        })?;
+
+    info!("SOCKS5: Connection closed for {}", target);
+    return Ok(());
 
     // Placeholder code below (will be replaced with circuit routing)
     #[allow(unreachable_code)]

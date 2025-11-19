@@ -265,7 +265,8 @@ mod tests {
 
         // Create an expired descriptor
         let keypair = KeyPair::generate();
-        let intro_point = create_test_intro_point();
+        let service_address = crate::service::ServiceAddress::from_public_key(&keypair.public_key());
+        let intro_point = create_test_intro_point(&service_address);
         let mut descriptor = crate::service::ServiceDescriptor::new(
             keypair.public_key(),
             vec![intro_point],
@@ -296,7 +297,8 @@ mod tests {
 
     fn create_test_descriptor_with_keypair() -> (crate::service::ServiceDescriptor, KeyPair) {
         let keypair = KeyPair::generate();
-        let intro_point = create_test_intro_point();
+        let service_address = crate::service::ServiceAddress::from_public_key(&keypair.public_key());
+        let intro_point = create_test_intro_point(&service_address);
 
         let descriptor = crate::service::ServiceDescriptor::new(
             keypair.public_key(),
@@ -307,20 +309,24 @@ mod tests {
         (descriptor, keypair)
     }
 
-    fn create_test_intro_point() -> IntroductionPoint {
+    fn create_test_intro_point(service_address: &crate::service::ServiceAddress) -> IntroductionPoint {
         let keypair = KeyPair::generate();
         let node_id = NodeId::from_public_key(&keypair.public_key());
 
-        IntroductionPoint {
+        let mut intro_point = IntroductionPoint::new(
             node_id,
-            public_key: keypair.public_key(),
-            connection_info: ConnectionInfo {
+            keypair.public_key(),
+            ConnectionInfo {
                 addresses: vec!["127.0.0.1".to_string()],
                 port: 9001,
                 protocol_version: 1,
             },
-            auth_signature: crate::service::descriptor::Signature([0u8; 64]),
-        }
+        );
+
+        // IMPORTANT: Sign the introduction point with the node's keypair
+        intro_point.sign(service_address, &keypair);
+
+        intro_point
     }
 }
 

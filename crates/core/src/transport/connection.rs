@@ -2,6 +2,7 @@ use quinn::Connection as QuinnConnection;
 use std::net::SocketAddr;
 
 /// A QUIC connection to a remote peer
+#[derive(Debug)]
 pub struct Connection {
     /// Quinn connection
     inner: QuinnConnection,

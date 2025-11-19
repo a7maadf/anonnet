@@ -1,10 +1,12 @@
 mod kbucket;
 mod lookup;
 mod routing_table;
+mod storage;
 
 pub use kbucket::{BucketEntry, KBucket};
 pub use lookup::{LookupManager, NodeLookup};
 pub use routing_table::{InsertError, InsertResult, RoutingTable, RoutingTableStats};
+pub use storage::{DHTStorage, StorageError, StorageStats, StoredValue};
 
 use crate::identity::{NodeId, PublicKey};
 use anonnet_common::{dht, AnonNetError, NetworkAddress, Result};
@@ -28,6 +30,9 @@ pub struct DHT {
 
     /// Whether we've successfully bootstrapped
     bootstrapped: bool,
+
+    /// DHT storage for key-value pairs
+    storage: DHTStorage,
 }
 
 impl DHT {
@@ -39,6 +44,7 @@ impl DHT {
             lookup_manager: LookupManager::new(),
             bootstrap_nodes,
             bootstrapped: false,
+            storage: DHTStorage::new(10000), // Store up to 10k keys
         }
     }
 
@@ -63,6 +69,13 @@ impl DHT {
             Ok(result) => Ok(result),
             Err(InsertError::SelfInsert) => {
                 Err(AnonNetError::invalid_node_id("Cannot insert self"))
+            }
+            Err(InsertError::InvalidNodeId) => {
+                // SECURITY: Reject nodes where NodeId doesn't match PublicKey
+                // This prevents Sybil attacks
+                Err(AnonNetError::invalid_node_id(
+                    "NodeId doesn't match PublicKey (possible Sybil attack)",
+                ))
             }
             Err(InsertError::BucketFull { eviction_candidate }) => {
                 // In a real implementation, we would ping the eviction candidate
@@ -205,6 +218,21 @@ impl DHT {
         actions.completed_lookups = completed.len();
 
         actions
+    }
+
+    /// Store a value in the DHT
+    pub fn store(&mut self, key: [u8; 32], value: StoredValue) -> std::result::Result<(), StorageError> {
+        self.storage.store(key, value)
+    }
+
+    /// Find a value in the DHT storage
+    pub fn find_value(&self, key: &[u8; 32]) -> Option<Vec<StoredValue>> {
+        self.storage.get(key)
+    }
+
+    /// Get storage statistics
+    pub fn storage_stats(&self) -> StorageStats {
+        self.storage.stats()
     }
 
     /// Get routing table statistics

@@ -1,3 +1,3 @@
-mod messages;
+pub mod messages;
 
 pub use messages::*;
