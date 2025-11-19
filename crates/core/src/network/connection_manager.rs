@@ -125,6 +125,17 @@ impl ConnectionManager {
         Ok(handler)
     }
 
+    /// Get an existing connection to a peer
+    pub fn get_connection(&self, node_id: &NodeId) -> Option<Arc<ConnectionHandler>> {
+        let connections = self.connections.try_read().ok()?;
+        connections.get(node_id).map(|conn| conn.handler.clone())
+    }
+
+    /// Get all active connections
+    pub async fn active_connections(&self) -> Vec<NodeId> {
+        self.connections.read().await.keys().copied().collect()
+    }
+
     /// Perform handshake as initiator
     async fn perform_handshake(&self, connection: &Connection) -> Result<(PeerInfo, bool)> {
         // Generate challenge nonce
@@ -270,11 +281,6 @@ impl ConnectionManager {
         signature: &Signature64,
     ) -> bool {
         public_key.verify(nonce, &signature.0)
-    }
-
-    /// Get a connection to a peer
-    pub async fn get_connection(&self, node_id: &NodeId) -> Option<Arc<ConnectionHandler>> {
-        self.connections.read().await.get(node_id).map(|c| c.handler.clone())
     }
 
     /// Get all connected peers

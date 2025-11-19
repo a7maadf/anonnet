@@ -82,9 +82,13 @@ impl CircuitPool {
     }
 
     /// Get a circuit from the pool, or create a new one if needed
+    ///
+    /// NOTE: This requires a populated routing table with nodes to build circuits.
+    /// In a real deployment, the DHT must have discovered peers first.
     pub async fn acquire_circuit(
         &self,
         purpose: CircuitPurpose,
+        routing_table: &crate::dht::RoutingTable,
     ) -> Result<CircuitId, CircuitPoolError> {
         // Try to get an existing circuit from pool
         {
@@ -103,8 +107,16 @@ impl CircuitPool {
         }
 
         // No suitable circuit found, create a new one
-        // For now, return an error since we don't have full integration
-        Err(CircuitPoolError::NoCircuitsAvailable)
+        let circuit_id = {
+            let mut manager = self.circuit_manager.write().await;
+            manager.create_circuit(routing_table, purpose, None)
+                .map_err(|e| CircuitPoolError::CreationFailed(e.to_string()))?
+        };
+
+        // Add to pool
+        self.add_circuit(circuit_id, purpose).await;
+
+        Ok(circuit_id)
     }
 
     /// Release a circuit back to the pool

@@ -148,6 +148,7 @@ pub enum MessagePayload {
     // Data relay
     RelayData(RelayDataMessage),
     RelayAck(RelayAckMessage),
+    RelayCell(RelayCellMessage),
 
     // Credit system
     CreditTransfer(CreditTransferMessage),
@@ -176,6 +177,7 @@ impl MessagePayload {
             Self::DestroyCircuit(_) => "destroy_circuit",
             Self::RelayData(_) => "relay_data",
             Self::RelayAck(_) => "relay_ack",
+            Self::RelayCell(_) => "relay_cell",
             Self::CreditTransfer(_) => "credit_transfer",
             Self::CreditBalance(_) => "credit_balance",
             Self::Error(_) => "error",
@@ -440,6 +442,16 @@ pub struct RelayAckMessage {
 
     /// Bytes relayed
     pub bytes_relayed: u64,
+}
+
+/// Encrypted relay cell for circuit communication
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelayCellMessage {
+    /// Circuit ID
+    pub circuit_id: CircuitId,
+
+    /// Encrypted payload (contains serialized RelayCell after onion encryption)
+    pub encrypted_payload: Vec<u8>,
 }
 
 // ============================================================================

@@ -86,6 +86,11 @@ impl MessageDispatcher {
                 Ok(None)
             }
 
+            // Relay cell forwarding
+            MessagePayload::RelayCell(relay_cell) => {
+                self.handle_relay_cell(relay_cell).await
+            }
+
             // Other messages
             _ => {
                 warn!("Unhandled message type: {}", message.message_type());
@@ -262,6 +267,29 @@ impl MessageDispatcher {
                 ))))
             }
         }
+    }
+
+    /// Handle RelayCell messages (forward encrypted cells through circuit)
+    async fn handle_relay_cell(
+        &self,
+        relay_cell: crate::protocol::messages::RelayCellMessage,
+    ) -> Result<Option<Message>> {
+        use crate::protocol::messages::RelayCellMessage;
+
+        debug!("Handling RelayCell for circuit {:?}", relay_cell.circuit_id);
+
+        // TODO: Implement proper relay cell forwarding:
+        // 1. Look up the circuit
+        // 2. Decrypt one layer
+        // 3. Determine if this is the final hop or needs forwarding
+        // 4. If forwarding: find next hop and forward
+        // 5. If final hop: deserialize and process the relay cell
+        //
+        // For now, this is a stub that logs the message
+        debug!("RelayCell processing not yet implemented (stub)");
+
+        // No reply needed for relay cells (they're forwarded, not responded to)
+        Ok(None)
     }
 
     /// Perform a DHT lookup by querying nodes

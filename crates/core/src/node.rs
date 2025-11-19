@@ -245,6 +245,21 @@ impl Node {
         self.rendezvous_manager.clone()
     }
 
+    /// Get routing table (for circuit building)
+    pub fn routing_table(&self) -> Arc<RwLock<RoutingTable>> {
+        self.routing_table.clone()
+    }
+
+    /// Get circuit manager
+    pub fn circuit_manager(&self) -> Arc<RwLock<CircuitManager>> {
+        self.circuit_manager.clone()
+    }
+
+    /// Get connection manager
+    pub fn connection_manager(&self) -> Option<Arc<ConnectionManager>> {
+        self.connection_manager.clone()
+    }
+
     /// Load or generate node identity
     async fn load_or_generate_identity(config: &NodeConfig) -> Result<(Identity, ProofOfWork)> {
         let data_dir = std::path::PathBuf::from(&config.data_dir);
