@@ -6,13 +6,15 @@
 /// - Health checks (Ping, Pong)
 /// - Credit system messages
 
+use crate::circuit::handle_create_circuit;
 use crate::dht::DHT;
 use crate::identity::NodeId;
 use crate::network::ConnectionHandler;
 use crate::protocol::messages::{
-    ErrorCode, ErrorMessage, FindNodeMessage, FindValueMessage, Message, MessagePayload,
-    NodesFoundMessage, PeerInfo, PingMessage, PongMessage, Signature64, StoreMessage,
-    StoreResponseMessage, StoredValueMessage, ValueFoundMessage,
+    CircuitCreatedMessage, CreateCircuitMessage, ErrorCode, ErrorMessage, FindNodeMessage,
+    FindValueMessage, Message, MessagePayload, NodesFoundMessage, PeerInfo, PingMessage,
+    PongMessage, Signature64, StoreMessage, StoreResponseMessage, StoredValueMessage,
+    ValueFoundMessage,
 };
 use anyhow::Result;
 use std::sync::Arc;
@@ -23,12 +25,22 @@ use tracing::{debug, info, warn};
 pub struct MessageDispatcher {
     /// DHT reference
     dht: Arc<RwLock<DHT>>,
+
+    /// Our node ID
+    node_id: NodeId,
 }
 
 impl MessageDispatcher {
     /// Create a new message dispatcher
     pub fn new(dht: Arc<RwLock<DHT>>) -> Self {
-        Self { dht }
+        let node_id = {
+            let runtime = tokio::runtime::Handle::try_current()
+                .expect("MessageDispatcher must be created from within a tokio runtime");
+            runtime.block_on(async {
+                dht.read().await.local_id()
+            })
+        };
+        Self { dht, node_id }
     }
 
     /// Dispatch an incoming message and optionally return a response
@@ -65,13 +77,13 @@ impl MessageDispatcher {
                 Ok(None)
             }
 
-            // Circuit messages (stub for now)
-            MessagePayload::CreateCircuit(_) => {
-                warn!("CreateCircuit not yet implemented");
-                Ok(Some(Message::new(MessagePayload::Error(ErrorMessage {
-                    code: ErrorCode::InternalError,
-                    message: "Circuit creation not yet implemented".to_string(),
-                }))))
+            // Circuit messages
+            MessagePayload::CreateCircuit(create) => {
+                self.handle_create_circuit(create).await
+            }
+            MessagePayload::CircuitCreated(_) | MessagePayload::CircuitFailed(_) => {
+                // These are responses, no reply needed
+                Ok(None)
             }
 
             // Other messages
@@ -225,6 +237,30 @@ impl MessageDispatcher {
                     closest_nodes: peers,
                 },
             ))))
+        }
+    }
+
+    /// Handle CreateCircuit request (for relays)
+    async fn handle_create_circuit(
+        &self,
+        create: CreateCircuitMessage,
+    ) -> Result<Option<Message>> {
+        let circuit_id = create.circuit_id;
+        debug!("Handling CreateCircuit request for circuit {:?}", circuit_id);
+
+        match handle_create_circuit(create, self.node_id).await {
+            Ok(response) => {
+                Ok(Some(Message::new(MessagePayload::CircuitCreated(response))))
+            }
+            Err(e) => {
+                warn!("Failed to create circuit: {}", e);
+                Ok(Some(Message::new(MessagePayload::CircuitFailed(
+                    crate::protocol::messages::CircuitFailedMessage {
+                        circuit_id,
+                        reason: e.to_string(),
+                    },
+                ))))
+            }
         }
     }
 

@@ -1,3 +1,4 @@
+mod builder;
 mod crypto;
 mod manager;
 mod path_selection;
@@ -5,7 +6,8 @@ mod pool;
 mod relay;
 mod types;
 
-pub use crypto::{CryptoError, OnionCrypto};
+pub use builder::{CircuitBuilder, handle_create_circuit};
+pub use crypto::{CryptoError, EphemeralKeyPair, LayerCrypto, NonceCounter, OnionCrypto};
 pub use manager::{CircuitCleanupStats, CircuitManager, CircuitManagerStats};
 pub use path_selection::{PathSelectionCriteria, PathSelectionError, PathSelector};
 pub use pool::{CircuitPool, CircuitPoolConfig, CircuitPoolError, CircuitPoolStats, PoolStats};

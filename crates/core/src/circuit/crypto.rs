@@ -95,6 +95,11 @@ impl EphemeralKeyPair {
         &self.public
     }
 
+    /// Get the public key as bytes
+    pub fn public_key_bytes(&self) -> [u8; 32] {
+        *self.public.as_bytes()
+    }
+
     /// Perform Diffie-Hellman key exchange
     ///
     /// This consumes the secret key (you can't reuse it - forward secrecy!)
