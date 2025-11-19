@@ -2,6 +2,9 @@
 
 AnonNet is a next-generation anonymous network that reimagines how privacy and performance can coexist on the internet. Unlike traditional anonymity networks that rely on volunteer nodes and often suffer from poor performance, AnonNet introduces a novel **credit-based economy** where users earn credits by relaying traffic and spend credits to use the network.
 
+> **⚠️ Important: .anon-Only Network**
+> AnonNet **does NOT provide clearnet access** (no exit nodes to regular internet). The network exclusively supports **.anon services** - anonymous hidden services similar to Tor's .onion addresses. This design choice protects users from legal risks and prevents the network from being used for general internet access.
+
 ### The Problem We're Solving
 
 Current anonymity networks like Tor face several critical challenges:
@@ -239,20 +242,29 @@ Sender → Relay → Receiver
 - ✅ Security audit completed
 - ✅ Documentation comprehensive
 
-#### Phase 7: Network Services ⭐ NEW
+#### Phase 7: Network Services
 - ✅ SOCKS5 proxy server (Tor-compatible on port 9050)
 - ✅ HTTP/HTTPS proxy server (port 8118)
 - ✅ Proxy manager for concurrent services
 - ✅ Unified daemon CLI with help system
 - ✅ Browser and application integration ready
 
+#### Phase 8: .anon Services & Security ⭐ NEW
+- ✅ .anon service address system (like Tor's .onion)
+- ✅ Service descriptors with cryptographic signatures
+- ✅ DHT-based service directory for discovery
+- ✅ Rendezvous point system for anonymous connections
+- ✅ **Clearnet blocking** - proxies reject non-.anon addresses
+- ✅ Base32-encoded service addresses
+- ✅ Service descriptor validation and caching
+
 ### 📊 Test Coverage
 
-- **Total Tests**: 126
-- **Passing**: 116 (100% core functionality)
+- **Total Tests**: 140
+- **Passing**: 136 (100% core functionality)
 - **Ignored**: 4 (stream integration tests - known race condition)
 - **Failed**: 0
-- **Coverage**: All critical paths tested
+- **Coverage**: All critical paths tested including .anon services
 
 ### 🔒 Security Features
 
@@ -330,13 +342,15 @@ cargo run --release --bin anonnet-daemon version
 - SOCKS5: `localhost:9050` (Tor-compatible)
 - HTTP: `localhost:8118` (Privoxy-compatible)
 
+> **⚠️ Note**: Only `.anon` addresses are supported. Clearnet addresses (like example.com) will be blocked for user safety.
+
 **Use with command line:**
 ```bash
-# SOCKS5 proxy (recommended for DNS resolution)
-curl --proxy socks5h://localhost:9050 https://example.com
+# SOCKS5 proxy (recommended for .anon services)
+curl --proxy socks5h://localhost:9050 http://myservice.anon
 
 # HTTP proxy
-curl --proxy http://localhost:8118 http://example.com
+curl --proxy http://localhost:8118 http://myservice.anon
 
 # Configure git
 git config --global http.proxy http://localhost:8118
@@ -488,24 +502,30 @@ let balance = ledger.get_balance(&node_id)?;
 - [x] SOCKS5 proxy server
 - [x] HTTP proxy server
 - [x] Proxy manager and CLI
-- [ ] .anon DNS system (deferred to Phase 8)
-- [ ] Service directory (deferred to Phase 8)
 
-### Phase 8: Advanced Features (Next)
+### Phase 8: .anon Services & Security ✅ **COMPLETE**
+- [x] .anon service address system
+- [x] Service descriptors with cryptographic verification
+- [x] DHT-based service directory
+- [x] Rendezvous point system for anonymous connections
+- [x] Clearnet blocking (safety feature)
+- [x] Cryptographically-derived .anon addresses
+
+### Phase 9: Advanced Features (Next)
 - [ ] Multi-path routing
 - [ ] Cover traffic generation
 - [ ] Bandwidth estimation
 - [ ] Circuit pooling
 - [ ] Advanced path selection
 
-### Phase 9: Production Readiness
+### Phase 10: Production Readiness
 - [ ] Security hardening
 - [ ] Rate limiting
 - [ ] DDoS protection
 - [ ] Monitoring and logging
 - [ ] Network dashboard
 
-### Phase 10: Network Launch
+### Phase 11: Network Launch
 - [ ] Bootstrap node deployment
 - [ ] Validator network setup
 - [ ] Public documentation

@@ -4,10 +4,11 @@
 /// to route their traffic through the anonymous network.
 
 use anyhow::{anyhow, Result};
+use anonnet_core::ServiceAddress;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use std::net::SocketAddr;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 /// SOCKS5 proxy server
 pub struct Socks5Server {
@@ -136,10 +137,35 @@ async fn handle_client(mut stream: TcpStream) -> Result<()> {
         }
     };
 
-    debug!("SOCKS5: Connecting to {}", target);
+    debug!("SOCKS5: Request to connect to {}", target);
 
-    // TODO: Route through AnonNet circuit instead of direct connection
-    // For now, make direct connection as a placeholder
+    // Extract hostname from target
+    let hostname = extract_hostname(&target);
+
+    // SECURITY: Block all clearnet addresses - only allow .anon services
+    if !ServiceAddress::is_anon_address(&hostname) {
+        warn!("SOCKS5: Blocked clearnet address: {}", target);
+        send_reply(&mut stream, CONNECTION_NOT_ALLOWED).await?;
+        return Err(anyhow!(
+            "Clearnet access blocked. AnonNet only supports .anon services for user safety."
+        ));
+    }
+
+    debug!("SOCKS5: Connecting to .anon service: {}", hostname);
+
+    // TODO: Route through AnonNet circuit to .anon service
+    // This requires:
+    // 1. Lookup service descriptor from DHT
+    // 2. Establish rendezvous connection
+    // 3. Create circuit to service
+    // For now, reject the connection with proper error
+    send_reply(&mut stream, HOST_UNREACHABLE).await?;
+    return Err(anyhow!(
+        ".anon service routing not yet implemented - coming soon!"
+    ));
+
+    // Placeholder code below (will be replaced with circuit routing)
+    #[allow(unreachable_code)]
     match TcpStream::connect(&target).await {
         Ok(mut target_stream) => {
             send_reply(&mut stream, SUCCESS).await?;
@@ -193,6 +219,23 @@ async fn send_reply(stream: &mut TcpStream, reply_code: u8) -> Result<()> {
 
     stream.write_all(&reply).await?;
     Ok(())
+}
+
+/// Extract hostname from target address (removes port)
+fn extract_hostname(target: &str) -> String {
+    // Handle IPv6 addresses like [::1]:port
+    if target.starts_with('[') {
+        if let Some(end_bracket) = target.find(']') {
+            return target[1..end_bracket].to_string();
+        }
+    }
+
+    // Handle regular addresses like example.com:port or 1.2.3.4:port
+    if let Some(colon_pos) = target.rfind(':') {
+        return target[..colon_pos].to_string();
+    }
+
+    target.to_string()
 }
 
 #[cfg(test)]
