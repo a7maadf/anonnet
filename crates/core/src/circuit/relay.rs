@@ -1,4 +1,4 @@
-use super::crypto::{CryptoError, OnionCrypto};
+use super::crypto::{CryptoError, LayerCrypto, OnionCrypto};
 use super::types::{Circuit, RelayCell, RelayCellType};
 use crate::identity::NodeId;
 
@@ -108,25 +108,32 @@ impl RelayHandler {
     }
 
     /// Encrypt a cell for sending through a circuit
+    ///
+    /// Uses the forward encryption layers with proper nonce counters.
     pub fn encrypt_cell_for_circuit(
-        circuit: &Circuit,
+        circuit: &mut Circuit,
         cell: &RelayCell,
     ) -> Result<Vec<u8>, CryptoError> {
         // Serialize the cell
         let serialized = bincode::serialize(cell)
             .map_err(|_| CryptoError::EncryptionFailed)?;
 
-        // Encrypt with onion layers
-        OnionCrypto::encrypt_onion(circuit, &serialized)
+        // Get mutable access to forward layers
+        let mut layers = circuit.forward_layers_mut();
+
+        // Encrypt with onion layers (requires mutable for nonce counters)
+        OnionCrypto::encrypt_onion(&mut layers, &serialized)
     }
 
     /// Decrypt a cell received at a hop
+    ///
+    /// Uses the backward encryption layer with proper nonce counter.
     pub fn decrypt_cell_at_hop(
         encrypted: &[u8],
-        hop_key: &[u8; 32],
+        hop_layer: &mut LayerCrypto,
     ) -> Result<RelayCell, CryptoError> {
         // Decrypt one layer
-        let decrypted = OnionCrypto::decrypt_layer(hop_key, encrypted)?;
+        let decrypted = OnionCrypto::decrypt_layer(hop_layer, encrypted)?;
 
         // Deserialize
         bincode::deserialize(&decrypted)
@@ -222,7 +229,8 @@ mod tests {
             let enc_key = OnionCrypto::generate_key();
             let dec_key = OnionCrypto::generate_key();
 
-            let node = CircuitNode::new(node_id, keypair.public_key(), enc_key, dec_key);
+            #[allow(deprecated)]
+            let node = CircuitNode::from_raw_keys(node_id, keypair.public_key(), enc_key, dec_key);
             circuit.add_node(node);
         }
 

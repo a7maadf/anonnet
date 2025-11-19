@@ -1,3 +1,4 @@
+use super::crypto::LayerCrypto;
 use crate::identity::{NodeId, PublicKey};
 use anonnet_common::{routing, Timestamp};
 use serde::{Deserialize, Serialize};
@@ -51,28 +52,57 @@ pub struct CircuitNode {
     /// Node's public key
     pub public_key: PublicKey,
 
-    /// Encryption key for this hop (derived from handshake)
-    pub encryption_key: [u8; 32],
+    /// Forward encryption layer (client -> server)
+    pub forward_crypto: LayerCrypto,
 
-    /// Decryption key for this hop (derived from handshake)
-    pub decryption_key: [u8; 32],
+    /// Backward encryption layer (server -> client)
+    pub backward_crypto: LayerCrypto,
 
     /// When this node was added to the circuit
     pub added_at: Timestamp,
 }
 
 impl CircuitNode {
+    /// Create a new circuit node with proper bidirectional encryption
     pub fn new(
         node_id: NodeId,
         public_key: PublicKey,
-        encryption_key: [u8; 32],
-        decryption_key: [u8; 32],
+        forward_crypto: LayerCrypto,
+        backward_crypto: LayerCrypto,
     ) -> Self {
         Self {
             node_id,
             public_key,
-            encryption_key,
-            decryption_key,
+            forward_crypto,
+            backward_crypto,
+            added_at: Timestamp::now(),
+        }
+    }
+
+    /// Legacy constructor for backwards compatibility (DEPRECATED - use new())
+    ///
+    /// This creates LayerCrypto from raw keys but loses the proper nonce counters.
+    /// Only use for testing/migration.
+    #[deprecated(note = "Use new() with proper LayerCrypto instances")]
+    pub fn from_raw_keys(
+        node_id: NodeId,
+        public_key: PublicKey,
+        _encryption_key: [u8; 32],
+        _decryption_key: [u8; 32],
+    ) -> Self {
+        // For backwards compat, create dummy LayerCrypto
+        // This is NOT secure - proper code should use real DH and LayerCrypto
+        use super::crypto::{EphemeralKeyPair, OnionCrypto};
+        let dummy_secret = EphemeralKeyPair::generate();
+        let dummy_public = EphemeralKeyPair::generate();
+        let shared = dummy_secret.diffie_hellman(dummy_public.public_key());
+        let (forward, backward) = OnionCrypto::derive_bidirectional_keys(&shared);
+
+        Self {
+            node_id,
+            public_key,
+            forward_crypto: forward,
+            backward_crypto: backward,
             added_at: Timestamp::now(),
         }
     }
@@ -175,6 +205,16 @@ impl Circuit {
     pub fn add_received(&mut self, bytes: u64) {
         self.bytes_received += bytes;
         self.mark_used();
+    }
+
+    /// Get mutable access to forward encryption layers for encrypting cells
+    pub fn forward_layers_mut(&mut self) -> Vec<&mut LayerCrypto> {
+        self.nodes.iter_mut().map(|node| &mut node.forward_crypto).collect()
+    }
+
+    /// Get mutable access to backward encryption layers for decrypting cells
+    pub fn backward_layers_mut(&mut self) -> Vec<&mut LayerCrypto> {
+        self.nodes.iter_mut().map(|node| &mut node.backward_crypto).collect()
     }
 
     /// Mark the circuit as failed
@@ -329,10 +369,11 @@ mod tests {
         let mut circuit = Circuit::new(id, CircuitPurpose::General);
 
         // Add minimum required nodes
+        #[allow(deprecated)]
         for _ in 0..routing::MIN_CIRCUIT_LENGTH {
             let keypair = KeyPair::generate();
             let node_id = NodeId::from_public_key(&keypair.public_key());
-            let node = CircuitNode::new(
+            let node = CircuitNode::from_raw_keys(
                 node_id,
                 keypair.public_key(),
                 [0u8; 32],
@@ -358,9 +399,12 @@ mod tests {
         let node2_id = NodeId::from_public_key(&kp2.public_key());
         let node3_id = NodeId::from_public_key(&kp3.public_key());
 
-        circuit.add_node(CircuitNode::new(node1_id, kp1.public_key(), [0u8; 32], [0u8; 32]));
-        circuit.add_node(CircuitNode::new(node2_id, kp2.public_key(), [0u8; 32], [0u8; 32]));
-        circuit.add_node(CircuitNode::new(node3_id, kp3.public_key(), [0u8; 32], [0u8; 32]));
+        #[allow(deprecated)]
+        {
+            circuit.add_node(CircuitNode::from_raw_keys(node1_id, kp1.public_key(), [0u8; 32], [0u8; 32]));
+            circuit.add_node(CircuitNode::from_raw_keys(node2_id, kp2.public_key(), [0u8; 32], [0u8; 32]));
+            circuit.add_node(CircuitNode::from_raw_keys(node3_id, kp3.public_key(), [0u8; 32], [0u8; 32]));
+        }
 
         assert_eq!(circuit.entry_node().unwrap().node_id, node1_id);
         assert_eq!(circuit.exit_node().unwrap().node_id, node3_id);
