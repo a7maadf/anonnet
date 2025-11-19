@@ -64,6 +64,13 @@ impl DHT {
             Err(InsertError::SelfInsert) => {
                 Err(AnonNetError::invalid_node_id("Cannot insert self"))
             }
+            Err(InsertError::InvalidNodeId) => {
+                // SECURITY: Reject nodes where NodeId doesn't match PublicKey
+                // This prevents Sybil attacks
+                Err(AnonNetError::invalid_node_id(
+                    "NodeId doesn't match PublicKey (possible Sybil attack)",
+                ))
+            }
             Err(InsertError::BucketFull { eviction_candidate }) => {
                 // In a real implementation, we would ping the eviction candidate
                 // and potentially replace it if it doesn't respond

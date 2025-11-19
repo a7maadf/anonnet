@@ -62,6 +62,9 @@ impl RoutingTable {
 
     /// Try to insert a node into the routing table
     ///
+    /// SECURITY: This validates that NodeId matches PublicKey to prevent Sybil attacks.
+    /// Nodes cannot claim arbitrary IDs - the ID must be the BLAKE3 hash of their public key.
+    ///
     /// Returns:
     /// - Ok(InsertResult::Inserted) if the node was newly inserted
     /// - Ok(InsertResult::Updated) if the node already existed and was updated
@@ -75,6 +78,14 @@ impl RoutingTable {
         // Don't insert ourselves
         if node_id == self.local_id {
             return Err(InsertError::SelfInsert);
+        }
+
+        // CRITICAL SECURITY CHECK: Verify NodeId matches PublicKey
+        // This prevents Sybil attacks where an attacker claims arbitrary node IDs.
+        // The NodeId MUST be the BLAKE3 hash of the PublicKey.
+        let expected_node_id = NodeId::from_public_key(&public_key);
+        if node_id != expected_node_id {
+            return Err(InsertError::InvalidNodeId);
         }
 
         let bucket = self.bucket_mut(&node_id);
@@ -221,6 +232,8 @@ pub enum InsertError {
     SelfInsert,
     /// Bucket is full, returns the candidate for eviction
     BucketFull { eviction_candidate: NodeId },
+    /// NodeId doesn't match the PublicKey (prevents Sybil attacks)
+    InvalidNodeId,
 }
 
 /// Statistics about the routing table
@@ -353,5 +366,62 @@ mod tests {
         assert_eq!(stats.total_nodes, table.node_count());
         assert!(stats.non_empty_buckets > 0);
         assert_eq!(stats.bucket_capacity, dht::K_BUCKET_SIZE);
+    }
+
+    #[test]
+    fn test_invalid_node_id_rejected() {
+        // SECURITY TEST: Verify that nodes with mismatched NodeId/PublicKey are rejected
+        // This prevents Sybil attacks where an attacker tries to claim arbitrary node IDs
+
+        let local_keypair = KeyPair::generate();
+        let local_id = NodeId::from_public_key(&local_keypair.public_key());
+        let mut table = RoutingTable::new(local_id);
+
+        // Create a legitimate node
+        let keypair1 = KeyPair::generate();
+        let node_id1 = NodeId::from_public_key(&keypair1.public_key());
+
+        // Create a DIFFERENT keypair
+        let keypair2 = KeyPair::generate();
+        let public_key2 = keypair2.public_key();
+
+        // Try to insert node with mismatched NodeId/PublicKey (Sybil attack attempt)
+        let addr = NetworkAddress::from_socket(SocketAddr::new(
+            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            8080,
+        ));
+
+        let result = table.insert(node_id1, public_key2, vec![addr]);
+
+        // Should be rejected with InvalidNodeId error
+        assert!(matches!(result, Err(InsertError::InvalidNodeId)));
+
+        // Table should remain empty
+        assert_eq!(table.node_count(), 0);
+    }
+
+    #[test]
+    fn test_valid_node_id_accepted() {
+        // Verify that legitimate nodes with matching NodeId/PublicKey are accepted
+
+        let local_keypair = KeyPair::generate();
+        let local_id = NodeId::from_public_key(&local_keypair.public_key());
+        let mut table = RoutingTable::new(local_id);
+
+        // Create a legitimate node with matching NodeId/PublicKey
+        let keypair = KeyPair::generate();
+        let node_id = NodeId::from_public_key(&keypair.public_key());
+        let public_key = keypair.public_key();
+
+        let addr = NetworkAddress::from_socket(SocketAddr::new(
+            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            8080,
+        ));
+
+        let result = table.insert(node_id, public_key, vec![addr]);
+
+        // Should be accepted
+        assert!(matches!(result, Ok(InsertResult::Inserted)));
+        assert_eq!(table.node_count(), 1);
     }
 }
