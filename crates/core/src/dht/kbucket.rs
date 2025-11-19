@@ -1,5 +1,5 @@
 use crate::identity::{Distance, NodeId, PublicKey};
-use anonnet_common::{dht, NetworkAddress, Timestamp};
+use anonnet_common::{dht, NetworkAddress, Reputation, Timestamp};
 use std::collections::VecDeque;
 
 /// Entry in a k-bucket
@@ -22,6 +22,12 @@ pub struct BucketEntry {
 
     /// Is this node currently being pinged?
     pub pending_ping: bool,
+
+    /// Node's reputation score
+    pub reputation: Reputation,
+
+    /// Whether this node accepts relay traffic
+    pub accepts_relay: bool,
 }
 
 impl BucketEntry {
@@ -33,6 +39,8 @@ impl BucketEntry {
             last_seen: Timestamp::now(),
             failed_attempts: 0,
             pending_ping: false,
+            reputation: Reputation::INITIAL,
+            accepts_relay: true,
         }
     }
 

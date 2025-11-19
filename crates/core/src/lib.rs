@@ -1,3 +1,4 @@
+pub mod circuit;
 pub mod dht;
 pub mod identity;
 pub mod peer;
@@ -7,6 +8,14 @@ pub use identity::{
     Distance, ExportableIdentity, Identity, KeyPair, KeyPairError, NodeId, NodeIdError, PublicKey,
 };
 pub use protocol::*;
+
+// Re-export circuit types
+pub use circuit::{
+    Circuit, CircuitCleanupStats, CircuitId, CircuitManager, CircuitManagerStats, CircuitNode,
+    CircuitPurpose, CircuitState, CryptoError, OnionCrypto, PathSelectionCriteria,
+    PathSelectionError, PathSelector, RelayAction, RelayCell, RelayCellType, RelayError,
+    RelayHandler,
+};
 
 // Re-export DHT types
 pub use dht::{
