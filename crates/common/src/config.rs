@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::time::Duration;
 
 /// Network protocol constants
@@ -166,6 +167,40 @@ impl NodeConfig {
     pub fn keepalive_interval(&self) -> Duration {
         Duration::from_secs(protocol::KEEPALIVE_INTERVAL_SECS)
     }
+
+    /// Load configuration from a TOML file
+    pub fn from_file(path: &PathBuf) -> Result<Self, ConfigError> {
+        let contents = std::fs::read_to_string(path)
+            .map_err(|e| ConfigError::ReadError(e.to_string()))?;
+
+        toml::from_str(&contents).map_err(|e| ConfigError::ParseError(e.to_string()))
+    }
+
+    /// Save configuration to a TOML file
+    pub fn to_file(&self, path: &PathBuf) -> Result<(), ConfigError> {
+        let contents = toml::to_string_pretty(self)
+            .map_err(|e| ConfigError::SerializeError(e.to_string()))?;
+
+        std::fs::write(path, contents).map_err(|e| ConfigError::WriteError(e.to_string()))?;
+
+        Ok(())
+    }
+}
+
+/// Configuration errors
+#[derive(Debug, thiserror::Error)]
+pub enum ConfigError {
+    #[error("Failed to read config file: {0}")]
+    ReadError(String),
+
+    #[error("Failed to parse config: {0}")]
+    ParseError(String),
+
+    #[error("Failed to serialize config: {0}")]
+    SerializeError(String),
+
+    #[error("Failed to write config file: {0}")]
+    WriteError(String),
 }
 
 #[cfg(test)]
