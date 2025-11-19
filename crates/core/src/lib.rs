@@ -4,6 +4,7 @@ pub mod dht;
 pub mod identity;
 pub mod peer;
 pub mod protocol;
+pub mod service;
 pub mod transport;
 
 pub use identity::{
@@ -40,4 +41,11 @@ pub use consensus::{
 pub use transport::{
     Connection, ConnectionError, ConnectionStats, Endpoint, EndpointConfig, EndpointError,
     RecvStream, SendStream, StreamError,
+};
+
+// Re-export service types
+pub use service::{
+    ConnectionInfo, DescriptorError, DirectoryError, IntroductionPoint, RendezvousError,
+    RendezvousId, RendezvousManager, ServiceAddress, ServiceAddressError, ServiceDescriptor,
+    ServiceDirectory,
 };

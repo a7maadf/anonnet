@@ -4,6 +4,7 @@
 /// and applications to route their traffic through the anonymous network.
 
 use anyhow::{anyhow, Result};
+use anonnet_core::ServiceAddress;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use std::net::SocketAddr;
@@ -67,7 +68,7 @@ async fn handle_client(mut stream: TcpStream) -> Result<()> {
 
 /// Handle CONNECT method for HTTPS tunneling
 async fn handle_connect(stream: &mut TcpStream, target: &str) -> Result<()> {
-    debug!("HTTP proxy: CONNECT to {}", target);
+    debug!("HTTP proxy: CONNECT request to {}", target);
 
     // Parse host:port
     let parts: Vec<&str> = target.split(':').collect();
@@ -76,8 +77,33 @@ async fn handle_connect(stream: &mut TcpStream, target: &str) -> Result<()> {
         return Err(anyhow!("Invalid CONNECT target"));
     }
 
-    // TODO: Route through AnonNet circuit
-    // For now, direct connection as placeholder
+    let hostname = parts[0];
+
+    // SECURITY: Block all clearnet addresses - only allow .anon services
+    if !ServiceAddress::is_anon_address(hostname) {
+        warn!("HTTP proxy: Blocked clearnet CONNECT to {}", target);
+        send_error_response(stream, 403, "Forbidden").await?;
+        let error_body = "Clearnet access blocked. AnonNet only supports .anon services for user safety.";
+        stream.write_all(error_body.as_bytes()).await?;
+        return Err(anyhow!(
+            "Clearnet access blocked. AnonNet only supports .anon services for user safety."
+        ));
+    }
+
+    debug!("HTTP proxy: Connecting to .anon service: {}", hostname);
+
+    // TODO: Route through AnonNet circuit to .anon service
+    // This requires:
+    // 1. Lookup service descriptor from DHT
+    // 2. Establish rendezvous connection
+    // 3. Create circuit to service
+    send_error_response(stream, 503, "Service Unavailable").await?;
+    return Err(anyhow!(
+        ".anon service routing not yet implemented - coming soon!"
+    ));
+
+    // Placeholder code below (will be replaced with circuit routing)
+    #[allow(unreachable_code)]
     match TcpStream::connect(target).await {
         Ok(mut target_stream) => {
             // Send 200 Connection Established
@@ -140,6 +166,24 @@ async fn handle_http_request(
         "/".to_string()
     };
 
+    // Extract hostname without port
+    let hostname = if host.contains(':') {
+        host.split(':').next().unwrap()
+    } else {
+        host
+    };
+
+    // SECURITY: Block all clearnet addresses - only allow .anon services
+    if !ServiceAddress::is_anon_address(hostname) {
+        warn!("HTTP proxy: Blocked clearnet HTTP request to {}", host);
+        send_error_response(stream, 403, "Forbidden").await?;
+        let error_body = "Clearnet access blocked. AnonNet only supports .anon services for user safety.";
+        stream.write_all(error_body.as_bytes()).await?;
+        return Err(anyhow!(
+            "Clearnet access blocked. AnonNet only supports .anon services for user safety."
+        ));
+    }
+
     // Parse host:port
     let target = if host.contains(':') {
         host.to_string()
@@ -147,10 +191,16 @@ async fn handle_http_request(
         format!("{}:80", host)
     };
 
-    debug!("HTTP proxy: Forwarding to {} (path: {})", target, path);
+    debug!("HTTP proxy: Forwarding to .anon service {} (path: {})", target, path);
 
-    // TODO: Route through AnonNet circuit
-    // For now, direct connection as placeholder
+    // TODO: Route through AnonNet circuit to .anon service
+    send_error_response(stream, 503, "Service Unavailable").await?;
+    return Err(anyhow!(
+        ".anon service routing not yet implemented - coming soon!"
+    ));
+
+    // Placeholder code below (will be replaced with circuit routing)
+    #[allow(unreachable_code)]
     match TcpStream::connect(&target).await {
         Ok(mut target_stream) => {
             // Forward the modified request
