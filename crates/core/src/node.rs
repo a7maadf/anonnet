@@ -322,7 +322,12 @@ impl Node {
         ));
 
         self.endpoint = Some(endpoint);
-        self.connection_manager = Some(connection_manager);
+        self.connection_manager = Some(connection_manager.clone());
+
+        // Wire managers into message dispatcher for relay cell handling
+        self.message_dispatcher.set_circuit_manager(self.circuit_manager.clone()).await;
+        self.message_dispatcher.set_connection_manager(connection_manager).await;
+
         Ok(())
     }
 

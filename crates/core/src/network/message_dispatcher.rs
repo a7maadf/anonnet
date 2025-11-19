@@ -6,17 +6,17 @@
 /// - Health checks (Ping, Pong)
 /// - Credit system messages
 
-use crate::circuit::handle_create_circuit;
+use crate::circuit::{handle_create_circuit, CircuitManager, RelayHandler};
 use crate::dht::DHT;
 use crate::identity::NodeId;
-use crate::network::ConnectionHandler;
+use crate::network::{ConnectionHandler, ConnectionManager};
 use crate::protocol::messages::{
     CircuitCreatedMessage, CreateCircuitMessage, ErrorCode, ErrorMessage, FindNodeMessage,
     FindValueMessage, Message, MessagePayload, NodesFoundMessage, PeerInfo, PingMessage,
-    PongMessage, Signature64, StoreMessage, StoreResponseMessage, StoredValueMessage,
+    PongMessage, RelayCellMessage, Signature64, StoreMessage, StoreResponseMessage, StoredValueMessage,
     ValueFoundMessage,
 };
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
@@ -25,6 +25,12 @@ use tracing::{debug, info, warn};
 pub struct MessageDispatcher {
     /// DHT reference
     dht: Arc<RwLock<DHT>>,
+
+    /// Circuit manager for relay cell processing (with interior mutability)
+    circuit_manager: RwLock<Option<Arc<RwLock<CircuitManager>>>>,
+
+    /// Connection manager for forwarding (with interior mutability)
+    connection_manager: RwLock<Option<Arc<ConnectionManager>>>,
 
     /// Our node ID
     node_id: NodeId,
@@ -40,7 +46,22 @@ impl MessageDispatcher {
                 dht.read().await.local_id()
             })
         };
-        Self { dht, node_id }
+        Self {
+            dht,
+            circuit_manager: RwLock::new(None),
+            connection_manager: RwLock::new(None),
+            node_id,
+        }
+    }
+
+    /// Set the circuit manager (called after initialization)
+    pub async fn set_circuit_manager(&self, circuit_manager: Arc<RwLock<CircuitManager>>) {
+        *self.circuit_manager.write().await = Some(circuit_manager);
+    }
+
+    /// Set the connection manager (called after initialization)
+    pub async fn set_connection_manager(&self, connection_manager: Arc<ConnectionManager>) {
+        *self.connection_manager.write().await = Some(connection_manager);
     }
 
     /// Dispatch an incoming message and optionally return a response
@@ -274,22 +295,96 @@ impl MessageDispatcher {
         &self,
         relay_cell: crate::protocol::messages::RelayCellMessage,
     ) -> Result<Option<Message>> {
-        use crate::protocol::messages::RelayCellMessage;
-
         debug!("Handling RelayCell for circuit {:?}", relay_cell.circuit_id);
 
-        // TODO: Implement proper relay cell forwarding:
-        // 1. Look up the circuit
-        // 2. Decrypt one layer
-        // 3. Determine if this is the final hop or needs forwarding
-        // 4. If forwarding: find next hop and forward
-        // 5. If final hop: deserialize and process the relay cell
-        //
-        // For now, this is a stub that logs the message
-        debug!("RelayCell processing not yet implemented (stub)");
+        // Get circuit manager
+        let circuit_manager = self.circuit_manager.read().await.clone()
+            .ok_or_else(|| anyhow!("Circuit manager not initialized"))?;
 
-        // No reply needed for relay cells (they're forwarded, not responded to)
-        Ok(None)
+        let connection_manager = self.connection_manager.read().await.clone()
+            .ok_or_else(|| anyhow!("Connection manager not initialized"))?;
+
+        // Convert protocol CircuitId to internal CircuitId
+        let circuit_id = crate::circuit::CircuitId(relay_cell.circuit_id.0);
+
+        // Look up the circuit
+        let mut manager = circuit_manager.write().await;
+        let circuit = manager.get_circuit_mut(&circuit_id)
+            .ok_or_else(|| anyhow!("Circuit {} not found", circuit_id))?;
+
+        // Determine our position in the circuit
+        // Try to decrypt one layer - find which hop we are
+        let mut decrypted_cell = None;
+        let mut our_hop_index = None;
+
+        for (i, node) in circuit.nodes.iter_mut().enumerate() {
+            if node.node_id == self.node_id {
+                // This is us! Decrypt with our backward_crypto
+                match RelayHandler::decrypt_cell_at_hop(
+                    &relay_cell.encrypted_payload,
+                    &mut node.backward_crypto,
+                ) {
+                    Ok(cell) => {
+                        decrypted_cell = Some(cell);
+                        our_hop_index = Some(i);
+                        break;
+                    }
+                    Err(e) => {
+                        debug!("Failed to decrypt at hop {}: {}", i, e);
+                        continue;
+                    }
+                }
+            }
+        }
+
+        let cell = decrypted_cell.ok_or_else(|| {
+            anyhow!("Failed to decrypt relay cell (not a hop in this circuit or decryption failed)")
+        })?;
+
+        let hop_index = our_hop_index.unwrap();
+
+        debug!("Decrypted relay cell at hop {}: {:?}", hop_index, cell.cell_type);
+
+        // Determine if we're the exit node or need to forward
+        if hop_index == circuit.nodes.len() - 1 {
+            // We're the exit node - process the cell
+            debug!("Processing relay cell as exit node");
+
+            // TODO: Handle different cell types:
+            // - BEGIN: establish connection to destination
+            // - DATA: forward to destination
+            // - END: close connection
+            // For now, just log it
+            debug!("Exit node processing not yet implemented for {:?}", cell.cell_type);
+
+            Ok(None)
+        } else {
+            // We're a relay node - forward to next hop
+            let next_hop_index = hop_index + 1;
+            let next_node = &circuit.nodes[next_hop_index];
+            let next_node_id = next_node.node_id;
+
+            debug!("Forwarding relay cell to hop {} ({})", next_hop_index, next_node_id);
+
+            // Re-serialize and forward
+            // Note: In a full onion routing implementation, we would re-encrypt
+            // with all remaining layers. For now, we forward the decrypted cell.
+            let next_handler = connection_manager.get_connection(&next_node_id)
+                .ok_or_else(|| anyhow!("No connection to next hop {}", next_node_id))?;
+
+            // Forward the cell
+            let forward_msg = Message::new(MessagePayload::RelayCell(RelayCellMessage {
+                circuit_id: relay_cell.circuit_id,
+                encrypted_payload: bincode::serialize(&cell)
+                    .map_err(|e| anyhow!("Failed to serialize cell: {}", e))?,
+            }));
+
+            // Send as one-way message
+            next_handler.send_message(forward_msg).await?;
+
+            debug!("Relay cell forwarded to hop {}", next_hop_index);
+            Ok(None)
+        }
     }
 
     /// Perform a DHT lookup by querying nodes
