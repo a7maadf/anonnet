@@ -8,9 +8,12 @@
 
 use anyhow::Result;
 use std::net::SocketAddr;
-use tracing::{info, Level};
+use std::path::PathBuf;
+use tracing::{info, warn, Level};
 use tracing_subscriber;
 
+use anonnet_core::{Node, NodeStats};
+use anonnet_common::NodeConfig;
 use anonnet_daemon::ProxyManager;
 
 #[tokio::main]
@@ -39,8 +42,7 @@ async fn main() -> Result<()> {
                 run_proxy_mode().await?;
             }
             "node" => {
-                info!("Full node mode not yet implemented");
-                info!("For now, use 'proxy' mode to run proxy services");
+                run_node_mode().await?;
             }
             _ => {
                 eprintln!("Unknown command: {}", args[1]);
@@ -74,6 +76,68 @@ async fn run_proxy_mode() -> Result<()> {
     Ok(())
 }
 
+/// Run in full node mode
+async fn run_node_mode() -> Result<()> {
+    info!("Running in full node mode");
+
+    // Load or create default configuration
+    let config_path = PathBuf::from("anonnet.toml");
+    let config = if config_path.exists() {
+        info!("Loading configuration from {:?}", config_path);
+        NodeConfig::from_file(&config_path)?
+    } else {
+        info!("No configuration file found, using defaults");
+        let config = NodeConfig::default();
+
+        // Save default config for next time
+        if let Err(e) = config.to_file(&config_path) {
+            warn!("Failed to save default config: {}", e);
+        } else {
+            info!("Saved default configuration to {:?}", config_path);
+        }
+
+        config
+    };
+
+    // Create and start node
+    info!("Creating AnonNet node...");
+    let mut node = Node::new(config).await?;
+
+    info!("Starting node...");
+    node.start().await?;
+
+    // Print node stats
+    let stats = node.get_stats().await;
+    print_node_stats(&stats);
+
+    // Keep node running
+    info!("Node is running. Press Ctrl+C to stop.");
+
+    // Wait for shutdown signal
+    tokio::signal::ctrl_c().await?;
+
+    info!("Shutdown signal received");
+    node.stop().await?;
+
+    info!("Node stopped");
+    Ok(())
+}
+
+/// Print node statistics
+fn print_node_stats(stats: &NodeStats) {
+    println!("\n========================================");
+    println!("         AnonNet Node Status");
+    println!("========================================");
+    println!("Node ID:          {}", stats.node_id);
+    println!("Status:           {}", if stats.is_running { "Running" } else { "Stopped" });
+    println!("Peers:            {}", stats.peer_count);
+    println!("Active Peers:     {}", stats.active_peers);
+    println!("Circuits:         {}", stats.circuits);
+    println!("Active Circuits:  {}", stats.active_circuits);
+    println!("Bandwidth:        {} bytes/sec", stats.bandwidth);
+    println!("========================================\n");
+}
+
 /// Print help message
 fn print_help() {
     println!("AnonNet Daemon - Anonymous Network Node");
@@ -83,7 +147,7 @@ fn print_help() {
     println!();
     println!("COMMANDS:");
     println!("    proxy       Run SOCKS5 and HTTP proxy services (default)");
-    println!("    node        Run full AnonNet node (coming soon)");
+    println!("    node        Run full AnonNet node with DHT, circuits, and consensus");
     println!("    help        Show this help message");
     println!("    version     Show version information");
     println!();

@@ -3,6 +3,7 @@ pub mod consensus;
 pub mod dht;
 pub mod identity;
 pub mod network;
+pub mod node;
 pub mod peer;
 pub mod protocol;
 pub mod service;
@@ -56,3 +57,6 @@ pub use network::{
     BandwidthConfig, BandwidthEstimator, NetworkBandwidthStats, NodeBandwidthStats,
     RateLimitConfig, RateLimitError, RateLimiter, RateLimitStats, RateLimitStatus,
 };
+
+// Re-export node runtime
+pub use node::{Node, NodeStats};

@@ -1,0 +1,439 @@
+/// AnonNet Node Runtime
+///
+/// This module provides the main Node struct that coordinates all components
+/// of an AnonNet node: DHT, circuits, consensus, services, etc.
+
+use crate::circuit::{CircuitManager, CircuitPool, CircuitPoolConfig};
+use crate::consensus::{Block, Blockchain, CreditLedger, Transaction, TransactionType};
+use crate::dht::{BootstrapNode, RoutingTable, DHT};
+use crate::identity::{ExportableIdentity, Identity, KeyPair, NodeId, ProofOfWork};
+use crate::network::{BandwidthEstimator, RateLimiter, BandwidthConfig, RateLimitConfig};
+use crate::peer::PeerManager;
+use crate::service::{ServiceDirectory, RendezvousManager};
+use crate::transport::{Endpoint, EndpointConfig};
+use anonnet_common::{Credits, NetworkAddress, NodeConfig};
+use anyhow::Result;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use tracing::{info, warn};
+
+/// Main AnonNet node runtime
+///
+/// Coordinates all subsystems: DHT, circuits, consensus, services, etc.
+pub struct Node {
+    /// Node identity
+    identity: Identity,
+
+    /// Proof of work for this node
+    pow: ProofOfWork,
+
+    /// Node configuration
+    config: NodeConfig,
+
+    /// DHT for peer discovery
+    dht: Arc<RwLock<DHT>>,
+
+    /// Routing table
+    routing_table: Arc<RwLock<RoutingTable>>,
+
+    /// Circuit manager
+    circuit_manager: Arc<RwLock<CircuitManager>>,
+
+    /// Circuit pool
+    circuit_pool: Arc<CircuitPool>,
+
+    /// Peer manager
+    peer_manager: Arc<RwLock<PeerManager>>,
+
+    /// Credit ledger
+    credit_ledger: Arc<RwLock<CreditLedger>>,
+
+    /// Blockchain
+    blockchain: Arc<RwLock<Blockchain>>,
+
+    /// Service directory (for .anon services)
+    service_directory: Arc<ServiceDirectory>,
+
+    /// Rendezvous manager
+    rendezvous_manager: Arc<RendezvousManager>,
+
+    /// Bandwidth estimator
+    bandwidth_estimator: Arc<BandwidthEstimator>,
+
+    /// Rate limiter
+    rate_limiter: Arc<RateLimiter>,
+
+    /// QUIC endpoint
+    endpoint: Option<Arc<Endpoint>>,
+
+    /// Whether the node is running
+    running: Arc<RwLock<bool>>,
+}
+
+impl Node {
+    /// Create a new node with the given configuration
+    pub async fn new(config: NodeConfig) -> Result<Self> {
+        info!("Initializing AnonNet node...");
+
+        // Load or generate identity
+        let (identity, pow) = Self::load_or_generate_identity(&config).await?;
+        let node_id = identity.node_id();
+
+        info!("Node ID: {}", node_id);
+        info!("Public Key: {}", identity.keypair().public_key());
+
+        // Parse bootstrap nodes from config
+        let bootstrap_nodes = Self::parse_bootstrap_nodes(&config.bootstrap_nodes);
+
+        // Initialize routing table
+        let routing_table = Arc::new(RwLock::new(RoutingTable::new(node_id)));
+
+        // Initialize DHT
+        let dht = Arc::new(RwLock::new(DHT::new(
+            node_id,
+            bootstrap_nodes,
+        )));
+
+        // Initialize circuit manager
+        let circuit_manager = Arc::new(RwLock::new(CircuitManager::new()));
+
+        // Initialize circuit pool
+        let pool_config = CircuitPoolConfig {
+            target_pool_size: 3,
+            max_circuit_age: std::time::Duration::from_secs(600),
+            min_idle_time: std::time::Duration::from_secs(5),
+            max_reuse_count: 10,
+        };
+        let circuit_pool = Arc::new(CircuitPool::new(
+            pool_config,
+            circuit_manager.clone(),
+        ));
+
+        // Initialize peer manager
+        let peer_manager = Arc::new(RwLock::new(PeerManager::new(
+            config.max_peers,
+        )));
+
+        // Create genesis block for our node
+        let genesis_block = Self::create_genesis_block(node_id, &pow);
+
+        // Initialize credit ledger
+        let credit_ledger = Arc::new(RwLock::new(CreditLedger::new(genesis_block.clone())));
+
+        // Initialize blockchain
+        let blockchain = Arc::new(RwLock::new(Blockchain::new(genesis_block)));
+
+        // Initialize service directory
+        let service_directory = Arc::new(ServiceDirectory::new(
+            node_id,
+            routing_table.clone(),
+        ));
+
+        // Initialize rendezvous manager
+        // Note: RendezvousManager expects unwrapped CircuitManager
+        let rendezvous_circuit_manager = {
+            let _manager = circuit_manager.read().await;
+            // We can't easily share the manager here, so for now create a new one
+            // This is a temporary workaround - ideally RendezvousManager should accept Arc<RwLock<>>
+            Arc::new(CircuitManager::new())
+        };
+        let rendezvous_manager = Arc::new(RendezvousManager::new(
+            node_id,
+            rendezvous_circuit_manager,
+        ));
+
+        // Initialize bandwidth estimator
+        let bandwidth_estimator = Arc::new(BandwidthEstimator::new(
+            BandwidthConfig::default(),
+        ));
+
+        // Initialize rate limiter
+        let rate_limiter = Arc::new(RateLimiter::new(
+            RateLimitConfig::default(),
+        ));
+
+        Ok(Self {
+            identity,
+            pow,
+            config,
+            dht,
+            routing_table,
+            circuit_manager,
+            circuit_pool,
+            peer_manager,
+            credit_ledger,
+            blockchain,
+            service_directory,
+            rendezvous_manager,
+            bandwidth_estimator,
+            rate_limiter,
+            endpoint: None,
+            running: Arc::new(RwLock::new(false)),
+        })
+    }
+
+    /// Start the node
+    pub async fn start(&mut self) -> Result<()> {
+        let listen_addr = format!("{}:{}", self.config.listen_addr, self.config.listen_port);
+        info!("Starting AnonNet node on {}...", listen_addr);
+
+        // Set running flag
+        *self.running.write().await = true;
+
+        // Start QUIC endpoint
+        self.start_endpoint().await?;
+
+        // Bootstrap DHT
+        self.bootstrap_dht().await?;
+
+        // Start background tasks
+        self.start_background_tasks().await;
+
+        info!("Node started successfully");
+        Ok(())
+    }
+
+    /// Stop the node
+    pub async fn stop(&self) -> Result<()> {
+        info!("Stopping AnonNet node...");
+        *self.running.write().await = false;
+        Ok(())
+    }
+
+    /// Check if node is running
+    pub async fn is_running(&self) -> bool {
+        *self.running.read().await
+    }
+
+    /// Get node ID
+    pub fn node_id(&self) -> NodeId {
+        self.identity.node_id()
+    }
+
+    /// Get identity
+    pub fn identity(&self) -> &Identity {
+        &self.identity
+    }
+
+    /// Get circuit pool (for use by proxies)
+    pub fn circuit_pool(&self) -> Arc<CircuitPool> {
+        self.circuit_pool.clone()
+    }
+
+    /// Get service directory
+    pub fn service_directory(&self) -> Arc<ServiceDirectory> {
+        self.service_directory.clone()
+    }
+
+    /// Get rendezvous manager
+    pub fn rendezvous_manager(&self) -> Arc<RendezvousManager> {
+        self.rendezvous_manager.clone()
+    }
+
+    /// Load or generate node identity
+    async fn load_or_generate_identity(config: &NodeConfig) -> Result<(Identity, ProofOfWork)> {
+        let data_dir = std::path::PathBuf::from(&config.data_dir);
+        let identity_path = data_dir.join("identity.json");
+        let pow_path = data_dir.join("pow.json");
+
+        // Try to load existing identity
+        if identity_path.exists() && pow_path.exists() {
+            info!("Loading identity from {:?}", identity_path);
+
+            // Load identity
+            let identity_json = std::fs::read_to_string(&identity_path)?;
+            let exportable = ExportableIdentity::from_json(&identity_json)?;
+            let identity = Identity::from_exportable(&exportable)?;
+
+            // Load PoW
+            let pow_json = std::fs::read_to_string(&pow_path)?;
+            let pow: ProofOfWork = serde_json::from_str(&pow_json)?;
+
+            info!("Identity and PoW loaded successfully");
+            return Ok((identity, pow));
+        }
+
+        // Generate new identity with PoW
+        info!("Generating new identity with PoW difficulty 12...");
+        let (keypair, pow) = KeyPair::generate_with_pow(12);
+        let node_id = NodeId::from_public_key(&keypair.public_key());
+        let identity = Identity::from_secret_bytes(&keypair.secret_bytes())?;
+
+        // Save to files
+        std::fs::create_dir_all(&data_dir)?;
+
+        // Save identity
+        let exportable = identity.to_exportable();
+        let identity_json = exportable.to_json()?;
+        std::fs::write(&identity_path, identity_json)?;
+
+        // Save PoW
+        let pow_json = serde_json::to_string_pretty(&pow)?;
+        std::fs::write(&pow_path, pow_json)?;
+
+        info!("Identity and PoW generated and saved");
+        Ok((identity, pow))
+    }
+
+    /// Start QUIC endpoint
+    async fn start_endpoint(&mut self) -> Result<()> {
+        info!("Starting QUIC endpoint...");
+        let listen_addr: SocketAddr = format!("{}:{}", self.config.listen_addr, self.config.listen_port).parse()?;
+        let endpoint_config = EndpointConfig {
+            bind_addr: listen_addr,
+        };
+        let endpoint = Endpoint::new(endpoint_config).await?;
+        self.endpoint = Some(Arc::new(endpoint));
+        Ok(())
+    }
+
+    /// Bootstrap DHT by connecting to bootstrap nodes
+    async fn bootstrap_dht(&self) -> Result<()> {
+        if self.config.bootstrap_nodes.is_empty() {
+            warn!("No bootstrap nodes configured. Running as bootstrap node.");
+            return Ok(());
+        }
+
+        info!("Bootstrapping DHT with {} nodes...", self.config.bootstrap_nodes.len());
+
+        for bootstrap_node in &self.config.bootstrap_nodes {
+            match self.connect_to_bootstrap(&bootstrap_node).await {
+                Ok(_) => {
+                    info!("Connected to bootstrap node: {}", bootstrap_node);
+                }
+                Err(e) => {
+                    warn!("Failed to connect to bootstrap node {}: {}", bootstrap_node, e);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Connect to a bootstrap node
+    async fn connect_to_bootstrap(
+        &self,
+        bootstrap: &str,
+    ) -> Result<()> {
+        // TODO: Implement actual connection logic
+        // For now, just add to routing table
+        info!("Would connect to bootstrap: {}", bootstrap);
+        Ok(())
+    }
+
+    /// Start background maintenance tasks
+    async fn start_background_tasks(&self) {
+        let running = self.running.clone();
+        let circuit_pool = self.circuit_pool.clone();
+        let bandwidth_estimator = self.bandwidth_estimator.clone();
+
+        // Circuit pool cleanup task
+        tokio::spawn(async move {
+            while *running.read().await {
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                circuit_pool.cleanup().await;
+            }
+        });
+
+        let running = self.running.clone();
+
+        // Bandwidth stats update task
+        tokio::spawn(async move {
+            while *running.read().await {
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                bandwidth_estimator.update_network_stats().await;
+            }
+        });
+
+        info!("Background tasks started");
+    }
+
+    /// Get node statistics
+    pub async fn get_stats(&self) -> NodeStats {
+        let routing_table = self.routing_table.read().await;
+        let peer_manager = self.peer_manager.read().await;
+        let circuit_pool_stats = self.circuit_pool.stats().await;
+        let network_stats = self.bandwidth_estimator.get_network_stats().await;
+
+        NodeStats {
+            node_id: self.identity.node_id(),
+            peer_count: routing_table.node_count(),
+            active_peers: peer_manager.stats().connected,
+            circuits: circuit_pool_stats.total_circuits,
+            active_circuits: circuit_pool_stats.in_use_circuits,
+            bandwidth: network_stats.total_bandwidth,
+            is_running: *self.running.read().await,
+        }
+    }
+
+    /// Create genesis block for this node
+    fn create_genesis_block(node_id: NodeId, pow: &crate::identity::ProofOfWork) -> Block {
+        let amount = Credits::new(pow.calculate_credits());
+
+        let tx = Transaction::new(
+            TransactionType::Genesis {
+                recipient: node_id,
+                amount,
+                pow: pow.clone(),
+            },
+            1, // nonce
+        );
+
+        Block::new(0, [0u8; 32], node_id, vec![tx])
+    }
+
+    /// Parse bootstrap nodes from string addresses
+    fn parse_bootstrap_nodes(addresses: &[String]) -> Vec<BootstrapNode> {
+        addresses
+            .iter()
+            .filter_map(|addr| {
+                // Try to parse as socket address first
+                if let Ok(socket_addr) = addr.parse::<SocketAddr>() {
+                    Some(BootstrapNode::new(NetworkAddress::from_socket(socket_addr)))
+                } else {
+                    // Try to parse as host:port
+                    let parts: Vec<&str> = addr.split(':').collect();
+                    if parts.len() == 2 {
+                        if let Ok(port) = parts[1].parse::<u16>() {
+                            Some(BootstrapNode::new(NetworkAddress::from_domain(
+                                parts[0].to_string(),
+                                port,
+                            )))
+                        } else {
+                            warn!("Failed to parse bootstrap node port: {}", addr);
+                            None
+                        }
+                    } else {
+                        warn!("Invalid bootstrap node address format: {}", addr);
+                        None
+                    }
+                }
+            })
+            .collect()
+    }
+}
+
+/// Node statistics
+#[derive(Debug, Clone)]
+pub struct NodeStats {
+    pub node_id: NodeId,
+    pub peer_count: usize,
+    pub active_peers: usize,
+    pub circuits: usize,
+    pub active_circuits: usize,
+    pub bandwidth: u64,
+    pub is_running: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_node_creation() {
+        let config = NodeConfig::default();
+        let result = Node::new(config).await;
+        assert!(result.is_ok());
+    }
+}
