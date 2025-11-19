@@ -44,7 +44,23 @@ impl CreditLedger {
     /// Process a genesis transaction (relaxed validation)
     fn process_genesis_transaction(&mut self, tx: Transaction) -> Result<(), TransactionError> {
         match &tx.tx_type {
-            TransactionType::Genesis { recipient, amount } => {
+            TransactionType::Genesis {
+                recipient,
+                amount,
+                pow,
+            } => {
+                // Verify PoW is valid for the recipient's identity
+                let recipient_key = *recipient.as_bytes();
+                if !pow.verify(&recipient_key) {
+                    return Err(TransactionError::InvalidPoW);
+                }
+
+                // Verify credits match PoW difficulty
+                let expected_credits = pow.calculate_credits();
+                if amount.amount() != expected_credits {
+                    return Err(TransactionError::InvalidAmount(amount.amount()));
+                }
+
                 let balance = self.get_balance(recipient);
                 self.balances.insert(*recipient, balance + *amount);
                 self.processed_transactions.insert(tx.id);
@@ -86,25 +102,10 @@ impl CreditLedger {
 
         // Validate based on transaction type
         match &tx.tx_type {
-            TransactionType::Transfer { from, to, amount } => {
-                // Check sender matches
-                if from != &sender {
-                    return Err(TransactionError::InvalidSender);
-                }
-
-                // Check balance
-                let balance = self.get_balance(from);
-                if balance < *amount {
-                    return Err(TransactionError::InsufficientBalance {
-                        needed: amount.amount(),
-                        available: balance.amount(),
-                    });
-                }
-
-                // Check amount is non-zero
-                if amount.amount() == 0 {
-                    return Err(TransactionError::InvalidAmount(0));
-                }
+            TransactionType::Transfer { .. } => {
+                // DISABLED: Credits cannot be transferred between identities
+                // This prevents Sybil attacks and credit farming
+                return Err(TransactionError::TransferNotAllowed);
             }
 
             TransactionType::RelayReward {
@@ -125,10 +126,33 @@ impl CreditLedger {
                 }
             }
 
-            TransactionType::Genesis { amount, .. } => {
+            TransactionType::Genesis {
+                recipient,
+                amount,
+                pow,
+            } => {
                 // Genesis transactions can only be in genesis block
                 if self.blockchain.height() > 0 {
                     return Err(TransactionError::InvalidAmount(amount.amount()));
+                }
+
+                // Verify PoW is valid
+                let recipient_key = *recipient.as_bytes();
+                if !pow.verify(&recipient_key) {
+                    return Err(TransactionError::InvalidPoW);
+                }
+
+                // Verify credits match PoW difficulty
+                let expected_credits = pow.calculate_credits();
+                if amount.amount() != expected_credits {
+                    return Err(TransactionError::InvalidAmount(amount.amount()));
+                }
+
+                // Verify PoW difficulty is within acceptable range
+                if pow.difficulty < crate::identity::ProofOfWork::minimum_difficulty()
+                    || pow.difficulty > crate::identity::ProofOfWork::maximum_difficulty()
+                {
+                    return Err(TransactionError::InvalidPoW);
                 }
             }
         }
@@ -159,8 +183,8 @@ impl CreditLedger {
                 self.balances.insert(*relay_node, balance + *amount);
             }
 
-            TransactionType::Genesis { recipient, amount } => {
-                // Initial credit distribution
+            TransactionType::Genesis { recipient, amount, .. } => {
+                // Initial credit distribution (PoW already validated)
                 let balance = self.get_balance(recipient);
                 self.balances.insert(*recipient, balance + *amount);
             }
@@ -292,13 +316,18 @@ mod tests {
     use crate::consensus::transaction::RelayProof;
     use crate::identity::KeyPair;
 
-    fn create_genesis_block(recipient: NodeId, amount: u64) -> Block {
+    fn create_genesis_block_with_pow(
+        recipient: NodeId,
+        pow: crate::identity::ProofOfWork,
+    ) -> Block {
         let proposer = recipient;
+        let amount = Credits::new(pow.calculate_credits());
 
         let tx = Transaction::new(
             TransactionType::Genesis {
                 recipient,
-                amount: Credits::new(amount),
+                amount,
+                pow,
             },
             1,
         );
@@ -306,31 +335,34 @@ mod tests {
         Block::new(0, [0u8; 32], proposer, vec![tx])
     }
 
-    #[test]
-    fn test_ledger_creation() {
-        let keypair = KeyPair::generate();
+    fn create_test_identity() -> (KeyPair, NodeId, crate::identity::ProofOfWork) {
+        let (keypair, pow) = KeyPair::generate_with_pow(8); // Easy PoW for tests
         let node_id = NodeId::from_public_key(&keypair.public_key());
-
-        let genesis = create_genesis_block(node_id, 1000);
-        let ledger = CreditLedger::new(genesis);
-
-        // Genesis transactions are processed automatically
-        assert_eq!(ledger.get_balance(&node_id), Credits::new(1000));
+        (keypair, node_id, pow)
     }
 
     #[test]
-    fn test_transfer_transaction() {
-        let kp1 = KeyPair::generate();
-        let kp2 = KeyPair::generate();
+    fn test_ledger_creation() {
+        let (_keypair, node_id, pow) = create_test_identity();
 
-        let node1 = NodeId::from_public_key(&kp1.public_key());
-        let node2 = NodeId::from_public_key(&kp2.public_key());
+        let genesis = create_genesis_block_with_pow(node_id, pow);
+        let ledger = CreditLedger::new(genesis);
+
+        // Genesis transactions are processed automatically
+        let expected_credits = pow.calculate_credits();
+        assert_eq!(ledger.get_balance(&node_id), Credits::new(expected_credits));
+    }
+
+    #[test]
+    fn test_transfer_transaction_rejected() {
+        let (_kp1, node1, pow1) = create_test_identity();
+        let (_kp2, node2, _pow2) = create_test_identity();
 
         // Create ledger with initial balance
-        let genesis = create_genesis_block(node1, 1000);
+        let genesis = create_genesis_block_with_pow(node1, pow1);
         let mut ledger = CreditLedger::new(genesis);
 
-        // Create transfer
+        // Create transfer - this should be REJECTED
         let tx = Transaction::new(
             TransactionType::Transfer {
                 from: node1,
@@ -340,29 +372,34 @@ mod tests {
             2, // nonce = 2 (genesis was nonce 1)
         );
 
-        ledger.process_transaction(tx).unwrap();
+        // Transfers are not allowed!
+        let result = ledger.process_transaction(tx);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            TransactionError::TransferNotAllowed
+        ));
 
-        assert_eq!(ledger.get_balance(&node1), Credits::new(700));
-        assert_eq!(ledger.get_balance(&node2), Credits::new(300));
+        // Balances should not have changed
+        assert_eq!(ledger.get_balance(&node1), Credits::new(pow1.calculate_credits()));
+        assert_eq!(ledger.get_balance(&node2), Credits::new(0));
     }
 
     #[test]
-    fn test_insufficient_balance() {
-        let kp1 = KeyPair::generate();
-        let kp2 = KeyPair::generate();
+    fn test_transfer_always_rejected() {
+        // This test verifies that transfers are rejected regardless of balance
+        let (_kp1, node1, pow1) = create_test_identity();
+        let (_kp2, node2, _pow2) = create_test_identity();
 
-        let node1 = NodeId::from_public_key(&kp1.public_key());
-        let node2 = NodeId::from_public_key(&kp2.public_key());
-
-        let genesis = create_genesis_block(node1, 100);
+        let genesis = create_genesis_block_with_pow(node1, pow1);
         let mut ledger = CreditLedger::new(genesis);
 
-        // Try to transfer more than balance
+        // Try to transfer credits - should fail even though we have sufficient balance
         let tx = Transaction::new(
             TransactionType::Transfer {
                 from: node1,
                 to: node2,
-                amount: Credits::new(500),
+                amount: Credits::new(1),
             },
             2,
         );
@@ -371,16 +408,15 @@ mod tests {
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
-            TransactionError::InsufficientBalance { .. }
+            TransactionError::TransferNotAllowed
         ));
     }
 
     #[test]
     fn test_relay_reward() {
-        let keypair = KeyPair::generate();
-        let node_id = NodeId::from_public_key(&keypair.public_key());
+        let (_keypair, node_id, pow) = create_test_identity();
 
-        let genesis = create_genesis_block(node_id, 0);
+        let genesis = create_genesis_block_with_pow(node_id, pow);
         let mut ledger = CreditLedger::new(genesis);
 
         // Create relay proof
@@ -400,26 +436,29 @@ mod tests {
 
         ledger.process_transaction(tx).unwrap();
 
-        // Should have earned 1000 credits for 1 GB
-        assert_eq!(ledger.get_balance(&node_id), Credits::new(1000));
+        // Should have earned the PoW credits + relay reward
+        let expected = pow.calculate_credits() + 1000;
+        assert_eq!(ledger.get_balance(&node_id), Credits::new(expected));
     }
 
     #[test]
     fn test_replay_attack_prevention() {
-        let kp1 = KeyPair::generate();
-        let kp2 = KeyPair::generate();
+        let (_kp, node_id, pow) = create_test_identity();
 
-        let node1 = NodeId::from_public_key(&kp1.public_key());
-        let node2 = NodeId::from_public_key(&kp2.public_key());
-
-        let genesis = create_genesis_block(node1, 1000);
+        let genesis = create_genesis_block_with_pow(node_id, pow);
         let mut ledger = CreditLedger::new(genesis);
 
+        // Create a relay reward transaction
+        let proof = RelayProof::new(12345, 100, 1024 * 1024 * 1024);
+        let amount = proof.calculate_credits();
+
         let tx = Transaction::new(
-            TransactionType::Transfer {
-                from: node1,
-                to: node2,
-                amount: Credits::new(100),
+            TransactionType::RelayReward {
+                relay_node: node_id,
+                circuit_id: 12345,
+                bytes_relayed: 1024 * 1024 * 1024,
+                amount,
+                proof,
             },
             2,
         );
@@ -438,19 +477,24 @@ mod tests {
 
     #[test]
     fn test_nonce_tracking() {
-        let keypair = KeyPair::generate();
-        let node_id = NodeId::from_public_key(&keypair.public_key());
+        let (_keypair, node_id, pow) = create_test_identity();
 
-        let genesis = create_genesis_block(node_id, 1000);
+        let genesis = create_genesis_block_with_pow(node_id, pow);
         let mut ledger = CreditLedger::new(genesis);
 
         assert_eq!(ledger.next_nonce(&node_id), 2);
 
+        // Use relay reward instead of transfer
+        let proof = RelayProof::new(12345, 100, 1024 * 1024 * 1024);
+        let amount = proof.calculate_credits();
+
         let tx = Transaction::new(
-            TransactionType::Transfer {
-                from: node_id,
-                to: node_id,
-                amount: Credits::new(1),
+            TransactionType::RelayReward {
+                relay_node: node_id,
+                circuit_id: 12345,
+                bytes_relayed: 1024 * 1024 * 1024,
+                amount,
+                proof,
             },
             2,
         );
@@ -462,36 +506,40 @@ mod tests {
 
     #[test]
     fn test_total_supply() {
-        let kp1 = KeyPair::generate();
-        let kp2 = KeyPair::generate();
+        let (_kp1, node1, pow1) = create_test_identity();
 
-        let node1 = NodeId::from_public_key(&kp1.public_key());
-        let node2 = NodeId::from_public_key(&kp2.public_key());
-
-        let genesis = create_genesis_block(node1, 1000);
+        let genesis = create_genesis_block_with_pow(node1, pow1);
         let mut ledger = CreditLedger::new(genesis);
 
-        assert_eq!(ledger.total_supply(), Credits::new(1000));
+        let initial_supply = pow1.calculate_credits();
+        assert_eq!(ledger.total_supply(), Credits::new(initial_supply));
 
-        // Transfer doesn't change total supply
+        // Relay rewards increase total supply
+        let proof = RelayProof::new(12345, 100, 1024 * 1024 * 1024);
+        let reward_amount = proof.calculate_credits();
+
         let tx = Transaction::new(
-            TransactionType::Transfer {
-                from: node1,
-                to: node2,
-                amount: Credits::new(300),
+            TransactionType::RelayReward {
+                relay_node: node1,
+                circuit_id: 12345,
+                bytes_relayed: 1024 * 1024 * 1024,
+                amount: reward_amount,
+                proof,
             },
             2,
         );
 
         ledger.process_transaction(tx).unwrap();
 
-        assert_eq!(ledger.total_supply(), Credits::new(1000));
+        assert_eq!(
+            ledger.total_supply(),
+            Credits::new(initial_supply + reward_amount.amount())
+        );
     }
 
     #[test]
     fn test_transaction_validator() {
-        let keypair = KeyPair::generate();
-        let node_id = NodeId::from_public_key(&keypair.public_key());
+        let (keypair, node_id, pow) = create_test_identity();
 
         let mut validator = TransactionValidator::new();
         validator.register_key(node_id, keypair.public_key());
@@ -499,14 +547,14 @@ mod tests {
         let tx = Transaction::new(
             TransactionType::Genesis {
                 recipient: node_id,
-                amount: Credits::new(1000),
+                amount: Credits::new(pow.calculate_credits()),
+                pow,
             },
             1,
         )
         .with_signature(Signature64([1u8; 64])); // Non-zero signature
 
-        // Should fail because we don't do proper signature verification yet
-        // In production, this would actually verify the signature
+        // Should pass basic signature check
         assert!(validator.verify_signature(&tx).is_ok());
     }
 }
