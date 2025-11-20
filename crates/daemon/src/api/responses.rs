@@ -96,3 +96,58 @@ impl ErrorResponse {
         Self::new(message, 404)
     }
 }
+
+/// Service registration request
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ServiceRegistrationRequest {
+    /// Local host where the service is running
+    pub local_host: String,
+    /// Local port where the service is running
+    pub local_port: u16,
+    /// TTL in hours (1-24)
+    #[serde(default = "default_ttl")]
+    pub ttl_hours: u64,
+}
+
+fn default_ttl() -> u64 {
+    6 // 6 hours default
+}
+
+/// Service registration response
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ServiceRegistrationResponse {
+    /// The generated .anon address
+    pub anon_address: String,
+    /// Service public key (hex)
+    pub public_key: String,
+    /// Number of introduction points
+    pub intro_points: usize,
+    /// When the descriptor expires (UTC timestamp)
+    pub expires_at: u64,
+}
+
+/// Service list response
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ServiceListResponse {
+    /// List of published services
+    pub services: Vec<ServiceInfo>,
+    /// Total number of services
+    pub total: usize,
+}
+
+/// Information about a published service
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ServiceInfo {
+    /// The .anon address
+    pub anon_address: String,
+    /// Service public key (hex)
+    pub public_key: String,
+    /// Number of introduction points
+    pub intro_points: usize,
+    /// Created at (UTC timestamp)
+    pub created_at: u64,
+    /// TTL in seconds
+    pub ttl_seconds: u64,
+    /// Whether the descriptor is expired
+    pub is_expired: bool,
+}

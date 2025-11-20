@@ -143,3 +143,84 @@ impl From<anyhow::Error> for AppError {
         AppError::internal(err.to_string())
     }
 }
+
+/// Handler for POST /api/services/register
+pub async fn register_service(
+    State(state): State<AppState>,
+    Json(req): Json<ServiceRegistrationRequest>,
+) -> Result<Json<ServiceRegistrationResponse>, AppError> {
+    debug!(
+        "API: POST /api/services/register ({}:{})",
+        req.local_host, req.local_port
+    );
+
+    // Validate inputs
+    if req.ttl_hours < 1 || req.ttl_hours > 24 {
+        return Err(AppError::internal("TTL must be between 1 and 24 hours"));
+    }
+
+    if req.local_port == 0 {
+        return Err(AppError::internal("Invalid port number"));
+    }
+
+    // Register the service
+    let (address, _keypair) = state
+        .node
+        .register_service(req.local_host, req.local_port, req.ttl_hours)
+        .await?;
+
+    // Calculate expiry timestamp
+    let expires_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        + (req.ttl_hours * 3600);
+
+    // Get intro point count from the descriptor
+    let descriptors = state.node.get_published_services().await;
+    let intro_points = descriptors
+        .iter()
+        .find(|d| d.address == address)
+        .map(|d| d.introduction_points.len())
+        .unwrap_or(0);
+
+    Ok(Json(ServiceRegistrationResponse {
+        anon_address: address.to_hostname(),
+        public_key: hex::encode(address.as_bytes()),
+        intro_points,
+        expires_at,
+    }))
+}
+
+/// Handler for GET /api/services/list
+pub async fn list_services(
+    State(state): State<AppState>,
+) -> Result<Json<ServiceListResponse>, AppError> {
+    debug!("API: GET /api/services/list");
+
+    let descriptors = state.node.get_published_services().await;
+
+    let services: Vec<ServiceInfo> = descriptors
+        .into_iter()
+        .map(|d| {
+            let created_at = d
+                .created_at
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+
+            ServiceInfo {
+                anon_address: d.address.to_hostname(),
+                public_key: hex::encode(d.public_key.as_bytes()),
+                intro_points: d.introduction_points.len(),
+                created_at,
+                ttl_seconds: d.ttl.as_secs(),
+                is_expired: d.is_expired(),
+            }
+        })
+        .collect();
+
+    let total = services.len();
+
+    Ok(Json(ServiceListResponse { services, total }))
+}

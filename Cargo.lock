@@ -65,6 +65,7 @@ dependencies = [
  "anonnet-core",
  "anyhow",
  "axum",
+ "hex",
  "serde",
  "serde_json",
  "tokio",
