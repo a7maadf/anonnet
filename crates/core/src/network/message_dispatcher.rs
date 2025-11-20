@@ -38,14 +38,8 @@ pub struct MessageDispatcher {
 
 impl MessageDispatcher {
     /// Create a new message dispatcher
-    pub fn new(dht: Arc<RwLock<DHT>>) -> Self {
-        let node_id = {
-            let runtime = tokio::runtime::Handle::try_current()
-                .expect("MessageDispatcher must be created from within a tokio runtime");
-            runtime.block_on(async {
-                dht.read().await.local_id()
-            })
-        };
+    pub async fn new(dht: Arc<RwLock<DHT>>) -> Self {
+        let node_id = dht.read().await.local_id();
         Self {
             dht,
             circuit_manager: RwLock::new(None),
