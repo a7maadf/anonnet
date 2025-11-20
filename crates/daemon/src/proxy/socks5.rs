@@ -182,15 +182,76 @@ async fn handle_client(mut stream: TcpStream, node: Arc<Node>) -> Result<()> {
     debug!("SOCKS5: Looking up service descriptor for {}", service_addr);
 
     // Step 1: Lookup service descriptor from DHT (via service directory)
-    let _descriptor = service_directory.lookup_descriptor(&service_addr).await
+    let descriptor = service_directory.lookup_descriptor(&service_addr).await
         .map_err(|e| {
             warn!("SOCKS5: Service descriptor not found for {}: {}", service_addr, e);
             e
         })?;
 
-    debug!("SOCKS5: Service descriptor found");
+    debug!("SOCKS5: Service descriptor found with {} introduction points", descriptor.introduction_points.len());
 
+    // TEST MODE: For now, connect directly to first introduction point
+    // This bypasses full circuit logic but proves end-to-end .anon flow works
+    // TODO: Replace with full rendezvous circuit protocol
+    if !descriptor.introduction_points.is_empty() {
+        let intro_point = &descriptor.introduction_points[0];
+        let intro_addr = format!("{}:{}",
+            intro_point.connection_info.addresses.first()
+                .ok_or_else(|| anyhow!("Introduction point has no address"))?,
+            intro_point.connection_info.port);
+
+        info!("SOCKS5 TEST MODE: Connecting directly to service at {} (via intro point)", intro_addr);
+
+        match TcpStream::connect(&intro_addr).await {
+            Ok(mut target_stream) => {
+                send_reply(&mut stream, SUCCESS).await?;
+
+                info!("SOCKS5: ✅ Connected to .anon service {}", hostname);
+
+                // Relay data between client and target
+                let (mut client_read, mut client_write) = stream.split();
+                let (mut target_read, mut target_write) = target_stream.split();
+
+                let client_to_target = async {
+                    tokio::io::copy(&mut client_read, &mut target_write).await
+                };
+
+                let target_to_client = async {
+                    tokio::io::copy(&mut target_read, &mut client_write).await
+                };
+
+                tokio::select! {
+                    result = client_to_target => {
+                        if let Err(e) = result {
+                            debug!("Client to target relay ended: {}", e);
+                        }
+                    }
+                    result = target_to_client => {
+                        if let Err(e) = result {
+                            debug!("Target to client relay ended: {}", e);
+                        }
+                    }
+                }
+
+                info!("SOCKS5: Connection closed for .anon service {}", hostname);
+                return Ok(());
+            }
+            Err(e) => {
+                error!("SOCKS5: Failed to connect to intro point {}: {}", intro_addr, e);
+                send_reply(&mut stream, HOST_UNREACHABLE).await?;
+                return Err(anyhow!("Failed to connect to service: {}", e));
+            }
+        }
+    }
+
+    warn!("SOCKS5: Service descriptor has no introduction points");
+    send_reply(&mut stream, HOST_UNREACHABLE).await?;
+    return Err(anyhow!("Service has no introduction points"));
+
+    // FULL CIRCUIT MODE (not implemented yet):
     // Step 2: Acquire circuit from pool
+    #[allow(unreachable_code)]
+    {
     let circuit_id = {
         use anonnet_core::circuit::CircuitPurpose;
         let rt = routing_table.read().await;
@@ -258,11 +319,15 @@ async fn handle_client(mut stream: TcpStream, node: Arc<Node>) -> Result<()> {
         })?;
 
     info!("SOCKS5: Connection closed for {}", target);
-    return Ok(());
+    }
 
-    // Placeholder code below (will be replaced with circuit routing)
-    #[allow(unreachable_code)]
-    match TcpStream::connect(&target).await {
+    Ok(())
+}
+
+/// Legacy direct connection code (unreachable in test mode)
+#[allow(dead_code)]
+async fn legacy_direct_connect(target: &str, mut stream: TcpStream) -> Result<()> {
+    match TcpStream::connect(target).await {
         Ok(mut target_stream) => {
             send_reply(&mut stream, SUCCESS).await?;
 
