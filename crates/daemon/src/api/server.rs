@@ -4,7 +4,7 @@ use super::handlers::*;
 use anonnet_core::Node;
 use anyhow::Result;
 use axum::{
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use std::net::SocketAddr;
@@ -40,6 +40,9 @@ impl ApiServer {
             // Network endpoints
             .route("/api/network/status", get(get_network_status))
             .route("/api/circuits/active", get(get_active_circuits))
+            // Service endpoints (.anon service hosting)
+            .route("/api/services/register", post(register_service))
+            .route("/api/services/list", get(list_services))
             // Add CORS middleware (allow browser extensions)
             .layer(CorsLayer::permissive())
             // Add shared state

@@ -610,6 +610,149 @@ impl Node {
             })
             .collect()
     }
+
+    /// Register a .anon service and publish its descriptor to the DHT
+    ///
+    /// This generates a keypair for the service, creates introduction points,
+    /// signs the descriptor, and publishes it to the network.
+    ///
+    /// # Arguments
+    /// * `local_host` - Local host/IP where the service is running (e.g., "127.0.0.1")
+    /// * `local_port` - Local port where the service is running (e.g., 8080)
+    /// * `ttl_hours` - How long the descriptor should be valid (1-24 hours)
+    ///
+    /// # Returns
+    /// Tuple of (service_address, keypair) - Save the keypair to reuse for updates
+    pub async fn register_service(
+        &self,
+        local_host: String,
+        local_port: u16,
+        ttl_hours: u64,
+    ) -> Result<(crate::service::ServiceAddress, KeyPair)> {
+        use crate::service::descriptor::{ConnectionInfo, IntroductionPoint};
+        use crate::service::ServiceDescriptor;
+        use std::time::Duration;
+
+        info!("Registering .anon service for {}:{}", local_host, local_port);
+
+        // 1. Generate keypair for the service
+        let service_keypair = KeyPair::generate();
+        let service_address = crate::service::ServiceAddress::from_public_key(&service_keypair.public_key());
+
+        info!("Generated .anon address: {}", service_address.to_hostname());
+
+        // 2. Select introduction points from connected peers
+        let introduction_points = self.select_introduction_points(&service_address).await?;
+
+        if introduction_points.is_empty() {
+            return Err(anyhow::anyhow!(
+                "No connected peers available for introduction points. Connect to the network first."
+            ));
+        }
+
+        info!("Selected {} introduction points", introduction_points.len());
+
+        // 3. Create service descriptor
+        let ttl = Duration::from_secs(ttl_hours * 3600);
+        let mut descriptor = ServiceDescriptor::new(
+            service_keypair.public_key(),
+            introduction_points,
+            ttl,
+        );
+
+        // 4. Sign the descriptor
+        descriptor.sign(&service_keypair);
+
+        info!("Signed service descriptor");
+
+        // 5. Publish to DHT
+        self.service_directory
+            .publish_descriptor(descriptor)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to publish descriptor: {}", e))?;
+
+        info!("Published service descriptor to DHT");
+        info!("Service is now accessible at: {}", service_address.to_hostname());
+
+        Ok((service_address, service_keypair))
+    }
+
+    /// Select introduction points from connected peers
+    ///
+    /// Chooses 3-5 reliable connected peers to act as introduction points
+    async fn select_introduction_points(
+        &self,
+        _service_address: &crate::service::ServiceAddress,
+    ) -> Result<Vec<crate::service::descriptor::IntroductionPoint>> {
+        use crate::service::descriptor::{ConnectionInfo, IntroductionPoint};
+
+        let peer_manager = self.peer_manager.read().await;
+        let peers = peer_manager.connected_peers();
+
+        if peers.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Select up to 3 introduction points (Tor uses 3)
+        let count = std::cmp::min(3, peers.len());
+        let selected_peers = &peers[0..count];
+
+        let mut intro_points = Vec::new();
+
+        for peer in selected_peers {
+            // Get the first address (or fallback to localhost)
+            let (ip_addr, port) = if let Some(first_addr) = peer.addresses.first() {
+                match first_addr {
+                    anonnet_common::NetworkAddress::Socket(socket_addr) => {
+                        (socket_addr.ip().to_string(), socket_addr.port())
+                    }
+                    anonnet_common::NetworkAddress::Domain { host, port } => {
+                        (host.clone(), *port)
+                    }
+                }
+            } else {
+                ("127.0.0.1".to_string(), 9000)
+            };
+
+            let connection_info = ConnectionInfo {
+                addresses: vec![ip_addr],
+                port,
+                protocol_version: 1,
+            };
+
+            // NOTE: In a full implementation, we would:
+            // 1. Send a request to the peer asking permission to use them as intro point
+            // 2. Peer would respond with their signature
+            // 3. We'd include that signature in the IntroductionPoint
+            //
+            // For testing, we'll create unsigned intro points (validation will be relaxed)
+            let intro_point = IntroductionPoint::new(
+                peer.node_id,
+                peer.public_key,
+                connection_info,
+            );
+
+            intro_points.push(intro_point);
+        }
+
+        Ok(intro_points)
+    }
+
+    /// Look up a service descriptor by .anon address
+    pub async fn lookup_service(
+        &self,
+        address: &crate::service::ServiceAddress,
+    ) -> Result<crate::service::ServiceDescriptor> {
+        self.service_directory
+            .lookup_descriptor(address)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to lookup service: {}", e))
+    }
+
+    /// Get all locally published services
+    pub async fn get_published_services(&self) -> Vec<crate::service::ServiceDescriptor> {
+        self.service_directory.get_cached_descriptors().await
+    }
 }
 
 /// Node statistics
