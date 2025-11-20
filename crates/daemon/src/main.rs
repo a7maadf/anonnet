@@ -63,9 +63,18 @@ async fn main() -> Result<()> {
 async fn run_proxy_mode() -> Result<()> {
     info!("Running in proxy mode");
 
+    // Load or create default configuration
+    let config_path = PathBuf::from("anonnet.toml");
+    let config = if config_path.exists() {
+        info!("Loading configuration from {:?}", config_path);
+        NodeConfig::from_file(&config_path)?
+    } else {
+        info!("No configuration file found, using defaults");
+        NodeConfig::default()
+    };
+
     // Create a lightweight node for proxy services
     info!("Creating AnonNet node for proxy services...");
-    let config = NodeConfig::default();
     let mut node = Node::new(config).await?;
 
     // Start the node
