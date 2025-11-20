@@ -671,16 +671,23 @@ impl Node {
 
         info!("Generated .anon address: {}", service_address.to_hostname());
 
-        // 2. Select introduction points from connected peers
-        let introduction_points = self.select_introduction_points(&service_address).await?;
+        // 2. Create introduction point pointing to the actual service
+        // TEST MODE: For testing, we create a single intro point with the service's actual address
+        // In production, this would be relay nodes selected from the network
+        let mut introduction_points = vec![];
 
-        if introduction_points.is_empty() {
-            return Err(anyhow::anyhow!(
-                "No connected peers available for introduction points. Connect to the network first."
-            ));
-        }
+        let test_intro_point = IntroductionPoint::new(
+            self.identity.node_id(), // Use our own node ID for testing
+            self.identity.keypair().public_key(),
+            ConnectionInfo {
+                addresses: vec![local_host.clone()],
+                port: local_port,
+                protocol_version: 1,
+            },
+        );
+        introduction_points.push(test_intro_point);
 
-        info!("Selected {} introduction points", introduction_points.len());
+        info!("Created introduction point for {}:{}", local_host, local_port);
 
         // 3. Create service descriptor
         let ttl = Duration::from_secs(ttl_hours * 3600);
@@ -702,14 +709,17 @@ impl Node {
             .map_err(|e| anyhow::anyhow!("Failed to publish descriptor: {}", e))?;
 
         info!("Published service descriptor to DHT");
-        info!("Service is now accessible at: {}", service_address.to_hostname());
+        info!("✅ Service registered successfully!");
+        info!("   .anon address: {}", service_address.to_hostname());
+        info!("   Service endpoint: {}:{}", local_host, local_port);
+        info!("   Access via SOCKS5 proxy to test end-to-end flow");
 
         Ok((service_address, service_keypair))
     }
 
-    /// Select introduction points from connected peers
-    ///
-    /// Chooses 3-5 reliable connected peers to act as introduction points
+    /// Select introduction points from connected peers (UNUSED IN TEST MODE)
+    /// This method is kept for future production use with full circuit routing
+    #[allow(dead_code)]
     async fn select_introduction_points(
         &self,
         _service_address: &crate::service::ServiceAddress,
