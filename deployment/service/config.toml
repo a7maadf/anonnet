@@ -1,0 +1,17 @@
+# Service Host Node Configuration
+# Laptop 2 - Friend B's House
+#
+# This node hosts the .anon website that others will access
+# REPLACE "BOOTSTRAP_ADDRESS_HERE" with the actual bootstrap IP:PORT
+
+listen_addr = "0.0.0.0"
+listen_port = 9000
+bootstrap_nodes = ["BOOTSTRAP_ADDRESS_HERE"]
+accept_relay = true
+max_peers = 50
+data_dir = "./data"
+verbose = false
+
+# Examples:
+# bootstrap_nodes = ["1.2.3.4:9000"]           # If using public IP
+# bootstrap_nodes = ["0.tcp.ngrok.io:12345"]   # If using ngrok
