@@ -296,6 +296,60 @@ Sender → Relay → Receiver
 
 ---
 
+## 📚 Documentation
+
+### 📖 User Guides
+
+**New to AnonNet? Start here:**
+
+- **[Browser Usage Guide](docs/BROWSER_USAGE.md)** - Complete guide to browsing .anon sites
+  - Installation & setup
+  - Launching the browser
+  - Installing the extension
+  - Credit system explained
+  - Troubleshooting
+
+- **[Hosting Guide](docs/HOSTING_GUIDE.md)** - Host your own .anon websites
+  - Setting up hidden services
+  - Publishing to the network
+  - Service discovery
+  - Best practices & security
+  - Real-world examples
+
+- **[Architecture Overview](docs/ARCHITECTURE.md)** - How AnonNet works under the hood
+  - System architecture
+  - Circuit construction
+  - Credit system details
+  - Security model
+  - Performance characteristics
+
+### 🎯 Quick Start
+
+**For Browsing:**
+```bash
+# 1. Launch the AnonNet browser (easiest)
+./browser/scripts/launch-anonnet-browser.sh
+
+# 2. Install the extension (see Browser Usage Guide)
+# 3. Browse .anon sites!
+```
+
+**For Hosting:**
+```bash
+# 1. Create your website (any HTTP server)
+python3 -m http.server 8080
+
+# 2. Start AnonNet daemon
+./target/release/anonnet-daemon node
+
+# 3. Publish your service (see Hosting Guide)
+# Your site is now accessible at http://[hash].anon
+```
+
+See the [Browser Usage Guide](docs/BROWSER_USAGE.md) and [Hosting Guide](docs/HOSTING_GUIDE.md) for complete instructions.
+
+---
+
 ## 🚀 Getting Started
 
 ### Prerequisites
@@ -379,25 +433,35 @@ For the best experience, use our **hardened browser** with Tor Browser security 
 
 If you prefer to configure your browser manually:
 
-- SOCKS5: `localhost:9050` (Tor-compatible)
-- HTTP: `localhost:8118` (Privoxy-compatible)
+```bash
+# The daemon auto-selects free ports, check the port files:
+SOCKS_PORT=$(cat ./data/socks5_port.txt)  # e.g., 53175
+HTTP_PORT=$(cat ./data/http_port.txt)     # e.g., 53177
+
+# Configure your browser:
+# SOCKS5: localhost:$SOCKS_PORT
+# HTTP:   localhost:$HTTP_PORT
+```
 
 > **⚠️ Note**: Only `.anon` addresses are supported. Clearnet addresses (like example.com) will be blocked for user safety.
 
 **Use with command line:**
 ```bash
+# Read the port dynamically
+SOCKS_PORT=$(cat ./data/socks5_port.txt)
+HTTP_PORT=$(cat ./data/http_port.txt)
+
 # SOCKS5 proxy (recommended for .anon services)
-curl --proxy socks5h://localhost:9050 http://myservice.anon
+curl --proxy socks5h://localhost:$SOCKS_PORT http://myservice.anon
 
 # HTTP proxy
-curl --proxy http://localhost:8118 http://myservice.anon
+curl --proxy http://localhost:$HTTP_PORT http://myservice.anon
 
-# Configure git
-git config --global http.proxy http://localhost:8118
+# Configure git (replace $HTTP_PORT with actual port)
+git config --global http.proxy http://localhost:$HTTP_PORT
 
 # Configure wget
-wget --proxy=on --proxy-user= --proxy-password= \
-     --http-proxy=localhost:8118 https://example.com
+wget --proxy=on --http-proxy=localhost:$HTTP_PORT http://example.anon
 ```
 
 ---
