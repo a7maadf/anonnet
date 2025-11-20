@@ -356,7 +356,29 @@ cargo run --release --bin anonnet-daemon help
 cargo run --release --bin anonnet-daemon version
 ```
 
-**Configure your browser:**
+### AnonNet Browser (Recommended) 🎯
+
+For the best experience, use our **hardened browser** with Tor Browser security features:
+
+```bash
+# Launch AnonNet Browser (auto-starts daemon + hardened Firefox)
+./browser/scripts/launch-anonnet-browser.sh
+```
+
+**Features:**
+- ✅ Tor Browser privacy hardening (700+ security settings)
+- ✅ Auto-configured proxy (no manual setup)
+- ✅ Fingerprinting protection
+- ✅ WebRTC/DNS leak prevention
+- ✅ First-party isolation
+- ✅ Zero configuration required
+
+**See:** [browser/README.md](browser/README.md) for full documentation.
+
+### Manual Browser Configuration
+
+If you prefer to configure your browser manually:
+
 - SOCKS5: `localhost:9050` (Tor-compatible)
 - HTTP: `localhost:8118` (Privoxy-compatible)
 
