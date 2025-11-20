@@ -6,10 +6,28 @@ set -e
 
 echo "🚀 Setting up AnonNet test network infrastructure..."
 
+# Detect the AnonNet project directory
+if [ -z "$ANONNET_DIR" ]; then
+    # Try to auto-detect based on script location
+    SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+    ANONNET_DIR="$(dirname "$SCRIPT_DIR")"
+fi
+
+# Check if daemon binary exists
+DAEMON_PATH="${ANONNET_DIR}/target/release/anonnet-daemon"
+if [ ! -f "$DAEMON_PATH" ]; then
+    echo "⚠️  Warning: Daemon binary not found at: $DAEMON_PATH"
+    echo "   You'll need to build it first: cd $ANONNET_DIR && cargo build --release"
+    echo ""
+fi
+
 # Create test directories
 echo "📁 Creating test directories..."
 mkdir -p ~/anonnet-test/{bootstrap,node1,node2,node3,node4}
 mkdir -p ~/test-websites/site1
+
+# Save the daemon path for scripts
+echo "$DAEMON_PATH" > ~/anonnet-test/.daemon_path
 
 # Create bootstrap config
 echo "⚙️  Creating bootstrap node config..."
@@ -125,20 +143,45 @@ set -e
 
 echo "🚀 Starting AnonNet test network..."
 
+# Get daemon path
+if [ -f ~/anonnet-test/.daemon_path ]; then
+    DAEMON=$(cat ~/anonnet-test/.daemon_path)
+else
+    echo "❌ Daemon path not found. Run setup script first."
+    exit 1
+fi
+
+# Check if daemon exists
+if [ ! -f "$DAEMON" ]; then
+    echo "❌ Daemon not found at: $DAEMON"
+    echo "   Build it first: cd $(dirname $(dirname $DAEMON)) && cargo build --release"
+    exit 1
+fi
+
+echo "Using daemon: $DAEMON"
+echo ""
+
 # Start bootstrap
 echo "Starting bootstrap node..."
 cd ~/anonnet-test/bootstrap
-/home/user/anonnet/target/release/anonnet-daemon node 2>&1 >> bootstrap.log &
+"$DAEMON" node 2>&1 >> bootstrap.log &
 echo $! > bootstrap.pid
 echo "  ✅ Bootstrap PID: $(cat bootstrap.pid)"
 
 sleep 5
 
+# Check if bootstrap started successfully
+if ! kill -0 $(cat bootstrap.pid) 2>/dev/null; then
+    echo "  ❌ Bootstrap node failed to start. Check bootstrap.log"
+    tail -10 bootstrap.log
+    exit 1
+fi
+
 # Start relay nodes
 for i in 1 2 3; do
   echo "Starting relay node $i..."
   cd ~/anonnet-test/node$i
-  /home/user/anonnet/target/release/anonnet-daemon node 2>&1 >> node$i.log &
+  "$DAEMON" node 2>&1 >> node$i.log &
   echo $! > node$i.pid
   echo "  ✅ Node $i PID: $(cat node$i.pid)"
   sleep 2
@@ -147,7 +190,7 @@ done
 # Start client node
 echo "Starting client node 4..."
 cd ~/anonnet-test/node4
-/home/user/anonnet/target/release/anonnet-daemon node 2>&1 >> node4.log &
+"$DAEMON" node 2>&1 >> node4.log &
 echo $! > node4.pid
 echo "  ✅ Node 4 PID: $(cat node4.pid)"
 
@@ -169,27 +212,48 @@ cat > ~/anonnet-test/stop-network.sh << 'EOF'
 
 echo "🛑 Stopping AnonNet test network..."
 
+STOPPED=0
+
 # Stop all nodes
 for node_dir in ~/anonnet-test/*/; do
   if [ -f "$node_dir/bootstrap.pid" ]; then
     PID=$(cat "$node_dir/bootstrap.pid")
-    echo "Stopping bootstrap (PID $PID)..."
-    kill $PID 2>/dev/null || true
+    if kill -0 $PID 2>/dev/null; then
+      echo "Stopping bootstrap (PID $PID)..."
+      kill $PID 2>/dev/null || true
+      STOPPED=$((STOPPED + 1))
+    fi
+    rm -f "$node_dir/bootstrap.pid"
   fi
   for i in 1 2 3 4 5; do
     if [ -f "$node_dir/node$i.pid" ]; then
       PID=$(cat "$node_dir/node$i.pid")
-      echo "Stopping node $i (PID $PID)..."
-      kill $PID 2>/dev/null || true
+      if kill -0 $PID 2>/dev/null; then
+        echo "Stopping node $i (PID $PID)..."
+        kill $PID 2>/dev/null || true
+        STOPPED=$((STOPPED + 1))
+      fi
+      rm -f "$node_dir/node$i.pid"
     fi
   done
 done
 
-# Kill test web servers
-echo "Stopping test web servers..."
-pkill -f "python3 -m http.server" || true
+# Wait a moment for graceful shutdown
+if [ $STOPPED -gt 0 ]; then
+    sleep 2
+fi
 
-echo "✅ Network stopped"
+# Force kill any remaining processes
+REMAINING=$(pgrep -f "anonnet-daemon node" || true)
+if [ -n "$REMAINING" ]; then
+    echo "Force killing remaining anonnet processes..."
+    killall -9 anonnet-daemon 2>/dev/null || true
+fi
+
+# Kill test web servers
+pkill -f "python3 -m http.server" 2>/dev/null || true
+
+echo "✅ Network stopped (stopped $STOPPED processes)"
 EOF
 
 cat > ~/anonnet-test/health-check.sh << 'EOF'
