@@ -78,11 +78,11 @@ async fn run_proxy_mode() -> Result<()> {
     // Default proxy addresses
     let socks5_addr: SocketAddr = "127.0.0.1:9050".parse()?;
     let http_addr: SocketAddr = "127.0.0.1:8118".parse()?;
-    let api_addr: SocketAddr = "127.0.0.1:19150".parse()?; // High port to avoid conflicts
+    let api_addr: SocketAddr = "127.0.0.1:0".parse()?; // Port 0 = let OS choose free port
 
     info!("SOCKS5 proxy will listen on: {}", socks5_addr);
     info!("HTTP proxy will listen on: {}", http_addr);
-    info!("API server will listen on: {}", api_addr);
+    info!("API server will auto-select available port...");
 
     // Start API server in background
     let api_server = ApiServer::new(api_addr, node.clone());

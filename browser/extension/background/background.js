@@ -36,19 +36,18 @@ function isAllowedUrl(url) {
         return true;
     }
 
-    // Allow localhost API (for extension to communicate with daemon)
-    if (url.startsWith('http://127.0.0.1:19150/') || url.startsWith('http://localhost:19150/')) {
-        return true;
-    }
-
     try {
         const urlObj = new URL(url);
         const hostname = urlObj.hostname;
 
-        // Allow localhost for development
+        // Allow localhost for the extension to communicate with daemon API
+        // (daemon auto-selects a free port, so we allow any port on localhost)
         if (hostname === 'localhost' || hostname === '127.0.0.1') {
-            // But only for the API port
-            return urlObj.port === '19150';
+            const port = parseInt(urlObj.port) || 80;
+            // Allow high ports (where API typically runs) and common API ports
+            if (port >= 8000 || port === 80) {
+                return true;
+            }
         }
 
         // Check if it's a .anon address
@@ -251,20 +250,55 @@ browser.runtime.onInstalled.addListener((details) => {
     }
 });
 
+// Try to discover API port
+const POSSIBLE_PORTS = [19150, 19151, 19152, 19153, 19154, 19155, 9150, 9151, 8150];
+let discoveredPort = null;
+
+async function discoverApiPort() {
+    for (const port of POSSIBLE_PORTS) {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 500);
+            const response = await fetch(`http://127.0.0.1:${port}/health`, {
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            if (response.ok) {
+                discoveredPort = port;
+                return port;
+            }
+        } catch (e) {
+            continue;
+        }
+    }
+    return null;
+}
+
 // Update badge based on daemon connection
 async function updateBadge() {
     try {
-        const response = await fetch('http://127.0.0.1:19150/health');
-        if (response.ok) {
-            browser.browserAction.setBadgeText({ text: '✓' });
-            browser.browserAction.setBadgeBackgroundColor({ color: '#4caf50' });
-        } else {
-            browser.browserAction.setBadgeText({ text: '!' });
-            browser.browserAction.setBadgeBackgroundColor({ color: '#ff9800' });
+        // Try discovered port first, or discover it
+        if (!discoveredPort) {
+            discoveredPort = await discoverApiPort();
         }
+
+        if (discoveredPort) {
+            const response = await fetch(`http://127.0.0.1:${discoveredPort}/health`);
+            if (response.ok) {
+                browser.browserAction.setBadgeText({ text: '✓' });
+                browser.browserAction.setBadgeBackgroundColor({ color: '#4caf50' });
+                return;
+            }
+        }
+
+        // Failed to connect
+        browser.browserAction.setBadgeText({ text: '✗' });
+        browser.browserAction.setBadgeBackgroundColor({ color: '#f44336' });
+        discoveredPort = null; // Reset for retry
     } catch (error) {
         browser.browserAction.setBadgeText({ text: '✗' });
         browser.browserAction.setBadgeBackgroundColor({ color: '#f44336' });
+        discoveredPort = null; // Reset for retry
     }
 }
 
