@@ -1,7 +1,30 @@
 // AnonNet Extension Popup Script
 // Fetches and displays credit balance, network status, and circuit information
 
-const API_BASE = 'http://127.0.0.1:19150';
+// Try to discover the API port (daemon auto-selects a free port)
+let API_BASE = null;
+const POSSIBLE_PORTS = [19150, 19151, 19152, 19153, 19154, 19155, 9150, 9151, 8150];
+
+// Discover which port the API is running on
+async function discoverApiPort() {
+    for (const port of POSSIBLE_PORTS) {
+        try {
+            const response = await fetch(`http://127.0.0.1:${port}/health`, {
+                method: 'GET',
+                signal: AbortSignal.timeout(500) // 500ms timeout
+            });
+            if (response.ok) {
+                API_BASE = `http://127.0.0.1:${port}`;
+                console.log('Discovered API on port', port);
+                return true;
+            }
+        } catch (e) {
+            // Port not responding, try next
+            continue;
+        }
+    }
+    return false;
+}
 
 // DOM Elements
 const elements = {
@@ -127,6 +150,14 @@ async function refreshData() {
     try {
         hideError();
 
+        // Discover API port if not already known
+        if (!API_BASE) {
+            const found = await discoverApiPort();
+            if (!found) {
+                throw new Error('Could not find AnonNet daemon. Is it running?');
+            }
+        }
+
         // Fetch both credit stats and network status in parallel
         const [creditData, networkData] = await Promise.all([
             fetchCreditStats(),
@@ -140,6 +171,8 @@ async function refreshData() {
     } catch (error) {
         console.error('Error fetching data:', error);
         showError(error.message);
+        // Reset API_BASE to retry discovery next time
+        API_BASE = null;
     }
 }
 

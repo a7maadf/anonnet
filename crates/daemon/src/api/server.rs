@@ -45,10 +45,18 @@ impl ApiServer {
             // Add shared state
             .with_state(state);
 
-        info!("API server starting on {}", self.listen_addr);
-
-        // Start the server
+        // Bind to the address (port 0 = let OS choose a free port)
         let listener = tokio::net::TcpListener::bind(self.listen_addr).await?;
+        let actual_addr = listener.local_addr()?;
+
+        info!("╔═══════════════════════════════════════════════════╗");
+        info!("║   API Server Started on {}   ║", actual_addr);
+        info!("╚═══════════════════════════════════════════════════╝");
+
+        // Save port to file for extension to discover
+        if let Err(e) = std::fs::write("./data/api_port.txt", actual_addr.port().to_string()) {
+            tracing::warn!("Failed to write API port file: {}", e);
+        }
 
         axum::serve(listener, app)
             .await
