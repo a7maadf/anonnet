@@ -75,13 +75,16 @@ async fn run_proxy_mode() -> Result<()> {
     // Wrap in Arc for sharing with proxies
     let node = Arc::new(node);
 
-    // Default proxy addresses
-    let socks5_addr: SocketAddr = "127.0.0.1:9050".parse()?;
-    let http_addr: SocketAddr = "127.0.0.1:8118".parse()?;
-    let api_addr: SocketAddr = "127.0.0.1:0".parse()?; // Port 0 = let OS choose free port
+    // Create data directory for port files
+    std::fs::create_dir_all("./data")?;
 
-    info!("SOCKS5 proxy will listen on: {}", socks5_addr);
-    info!("HTTP proxy will listen on: {}", http_addr);
+    // Auto-select free ports (port 0 = let OS choose)
+    let socks5_addr: SocketAddr = "127.0.0.1:0".parse()?;
+    let http_addr: SocketAddr = "127.0.0.1:0".parse()?;
+    let api_addr: SocketAddr = "127.0.0.1:0".parse()?;
+
+    info!("SOCKS5 proxy will auto-select available port...");
+    info!("HTTP proxy will auto-select available port...");
     info!("API server will auto-select available port...");
 
     // Start API server in background
@@ -175,19 +178,20 @@ fn print_help() {
     println!("    version     Show version information");
     println!();
     println!("PROXY MODE:");
-    println!("    SOCKS5:     127.0.0.1:9050  (Tor-compatible)");
-    println!("    HTTP:       127.0.0.1:8118  (Privoxy-compatible)");
+    println!("    SOCKS5, HTTP, and API ports are auto-selected to avoid conflicts");
+    println!("    Port numbers saved to ./data/ directory:");
+    println!("      - ./data/socks5_port.txt  (SOCKS5 proxy port)");
+    println!("      - ./data/http_port.txt    (HTTP proxy port)");
+    println!("      - ./data/api_port.txt     (REST API port)");
     println!();
     println!("EXAMPLES:");
     println!("    # Start proxy services");
     println!("    anonnet-daemon");
     println!("    anonnet-daemon proxy");
     println!();
-    println!("    # Configure browser:");
-    println!("    SOCKS5: localhost:9050");
-    println!("    HTTP:   localhost:8118");
+    println!("    # Find the SOCKS5 port:");
+    println!("    cat ./data/socks5_port.txt");
     println!();
-    println!("    # Use with curl:");
-    println!("    curl --proxy socks5h://localhost:9050 https://example.com");
-    println!("    curl --proxy http://localhost:8118 http://example.com");
+    println!("    # Use with curl (replace PORT with value from file):");
+    println!("    curl --proxy socks5h://localhost:PORT https://example.anon");
 }

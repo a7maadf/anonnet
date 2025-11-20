@@ -34,8 +34,12 @@ PROFILE_DIR="$HOME/.anonnet/firefox-profile"
 USER_JS_SOURCE="$BROWSER_DIR/profile/user.js"
 DAEMON_BIN="$PROJECT_DIR/target/release/anonnet-daemon"
 DAEMON_PID_FILE="$HOME/.anonnet/daemon.pid"
-SOCKS_PORT=9050
-HTTP_PORT=8118
+DATA_DIR="$PROJECT_DIR/data"
+SOCKS_PORT_FILE="$DATA_DIR/socks5_port.txt"
+HTTP_PORT_FILE="$DATA_DIR/http_port.txt"
+API_PORT_FILE="$DATA_DIR/api_port.txt"
+SOCKS_PORT=0  # Will be read from file
+HTTP_PORT=0   # Will be read from file
 
 # Logging functions
 log_info() {
@@ -66,6 +70,23 @@ print_banner() {
     echo "║                                                           ║"
     echo "╚═══════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
+}
+
+# Read port from file
+read_port() {
+    local port_file="$1"
+    if [ -f "$port_file" ]; then
+        cat "$port_file"
+        return 0
+    fi
+    echo "0"
+    return 1
+}
+
+# Update ports from files
+update_ports() {
+    SOCKS_PORT=$(read_port "$SOCKS_PORT_FILE")
+    HTTP_PORT=$(read_port "$HTTP_PORT_FILE")
 }
 
 # Find Firefox binary
@@ -128,16 +149,20 @@ is_daemon_running() {
     if [ -f "$DAEMON_PID_FILE" ]; then
         local pid=$(cat "$DAEMON_PID_FILE")
         if ps -p "$pid" > /dev/null 2>&1; then
+            # Update ports from files
+            update_ports
             return 0
         else
             rm -f "$DAEMON_PID_FILE"
         fi
     fi
 
-    # Check if ports are in use
-    if lsof -Pi :$SOCKS_PORT -sTCP:LISTEN -t >/dev/null 2>&1 || \
-       lsof -Pi :$HTTP_PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
-        return 0
+    # Check if port files exist (daemon creates them on startup)
+    if [ -f "$SOCKS_PORT_FILE" ] && [ -f "$HTTP_PORT_FILE" ]; then
+        update_ports
+        if [ "$SOCKS_PORT" != "0" ] && lsof -Pi :$SOCKS_PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
+            return 0
+        fi
     fi
 
     return 1
@@ -160,17 +185,20 @@ start_daemon() {
     local daemon_pid=$!
     echo "$daemon_pid" > "$DAEMON_PID_FILE"
 
-    # Wait for daemon to start
+    # Wait for daemon to start (check for port files)
     log_info "Waiting for daemon to initialize..."
     local max_wait=30
     local waited=0
 
     while [ $waited -lt $max_wait ]; do
-        if lsof -Pi :$SOCKS_PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
-            log_success "AnonNet daemon started (PID: $daemon_pid)"
-            log_success "SOCKS5 proxy: 127.0.0.1:$SOCKS_PORT"
-            log_success "HTTP proxy: 127.0.0.1:$HTTP_PORT"
-            return 0
+        if [ -f "$SOCKS_PORT_FILE" ] && [ -f "$HTTP_PORT_FILE" ]; then
+            update_ports
+            if [ "$SOCKS_PORT" != "0" ]; then
+                log_success "AnonNet daemon started (PID: $daemon_pid)"
+                log_success "SOCKS5 proxy: 127.0.0.1:$SOCKS_PORT"
+                log_success "HTTP proxy: 127.0.0.1:$HTTP_PORT"
+                return 0
+            fi
         fi
         sleep 1
         ((waited++))
@@ -191,7 +219,14 @@ setup_profile() {
     # Copy user.js
     if [ -f "$USER_JS_SOURCE" ]; then
         cp "$USER_JS_SOURCE" "$PROFILE_DIR/user.js"
-        log_success "Hardening configuration applied"
+
+        # Update SOCKS port in user.js with actual port from daemon
+        if [ "$SOCKS_PORT" != "0" ]; then
+            sed -i.bak "s/network\.proxy\.socks_port\", [0-9]\+/network.proxy.socks_port\", $SOCKS_PORT/" "$PROFILE_DIR/user.js"
+            log_success "Hardening configuration applied (SOCKS5: $SOCKS_PORT)"
+        else
+            log_success "Hardening configuration applied"
+        fi
     else
         log_warning "user.js not found at $USER_JS_SOURCE"
         log_warning "Browser will launch without hardening settings"
