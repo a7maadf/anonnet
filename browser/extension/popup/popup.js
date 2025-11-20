@@ -1,7 +1,7 @@
 // AnonNet Extension Popup Script
 // Fetches and displays credit balance, network status, and circuit information
 
-const API_BASE = 'http://127.0.0.1:9051';
+const API_BASE = 'http://127.0.0.1:9150';
 
 // DOM Elements
 const elements = {

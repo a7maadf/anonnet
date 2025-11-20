@@ -37,7 +37,7 @@ function isAllowedUrl(url) {
     }
 
     // Allow localhost API (for extension to communicate with daemon)
-    if (url.startsWith('http://127.0.0.1:9051/') || url.startsWith('http://localhost:9051/')) {
+    if (url.startsWith('http://127.0.0.1:9150/') || url.startsWith('http://localhost:9150/')) {
         return true;
     }
 
@@ -48,7 +48,7 @@ function isAllowedUrl(url) {
         // Allow localhost for development
         if (hostname === 'localhost' || hostname === '127.0.0.1') {
             // But only for the API port
-            return urlObj.port === '9051';
+            return urlObj.port === '9150';
         }
 
         // Check if it's a .anon address
@@ -254,7 +254,7 @@ browser.runtime.onInstalled.addListener((details) => {
 // Update badge based on daemon connection
 async function updateBadge() {
     try {
-        const response = await fetch('http://127.0.0.1:9051/health');
+        const response = await fetch('http://127.0.0.1:9150/health');
         if (response.ok) {
             browser.browserAction.setBadgeText({ text: '✓' });
             browser.browserAction.setBadgeBackgroundColor({ color: '#4caf50' });

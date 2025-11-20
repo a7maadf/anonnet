@@ -163,7 +163,7 @@ impl Node {
         ));
 
         // Initialize message dispatcher
-        let message_dispatcher = Arc::new(MessageDispatcher::new(dht.clone()));
+        let message_dispatcher = Arc::new(MessageDispatcher::new(dht.clone()).await);
 
         Ok(Self {
             identity,
