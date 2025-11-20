@@ -136,6 +136,21 @@ impl ConnectionManager {
         self.connections.read().await.keys().copied().collect()
     }
 
+    /// Get peer connection info
+    pub async fn get_peer_info(&self, node_id: &NodeId) -> Option<(PublicKey, Vec<NetworkAddress>, bool)> {
+        let connections = self.connections.read().await;
+        connections.get(node_id).map(|conn| {
+            (conn.public_key, conn.addresses.clone(), conn.accepts_relay)
+        })
+    }
+
+    /// Get all peer connections
+    pub async fn get_all_peer_info(&self) -> Vec<(NodeId, PublicKey, Vec<NetworkAddress>, bool)> {
+        self.connections.read().await.iter().map(|(node_id, conn)| {
+            (*node_id, conn.public_key, conn.addresses.clone(), conn.accepts_relay)
+        }).collect()
+    }
+
     /// Perform handshake as initiator
     async fn perform_handshake(&self, connection: &Connection) -> Result<(PeerInfo, bool)> {
         // Generate challenge nonce

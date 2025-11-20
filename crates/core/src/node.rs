@@ -544,6 +544,36 @@ impl Node {
             });
         }
 
+        // Sync ConnectionManager peers to PeerManager periodically
+        if let Some(connection_manager) = &self.connection_manager {
+            let running = self.running.clone();
+            let connection_manager = connection_manager.clone();
+            let peer_manager = self.peer_manager.clone();
+
+            tokio::spawn(async move {
+                while *running.read().await {
+                    // Get all peers from ConnectionManager
+                    let conn_peers = connection_manager.get_all_peer_info().await;
+
+                    // Sync to PeerManager
+                    {
+                        let mut pm = peer_manager.write().await;
+                        for (node_id, public_key, addresses, accepts_relay) in conn_peers {
+                            // Add peer if not already tracked
+                            if pm.get_peer(&node_id).is_none() {
+                                pm.add_peer(node_id, public_key, addresses);
+                            }
+                            // Mark as connected
+                            pm.mark_connected(&node_id);
+                        }
+                    }
+
+                    // Sync every 5 seconds
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                }
+            });
+        }
+
         info!("Background tasks started");
     }
 

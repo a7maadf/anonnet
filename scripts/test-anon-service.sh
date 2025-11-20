@@ -198,8 +198,8 @@ REGISTER_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
     -H "Content-Type: application/json" \
     -d '{"local_host":"127.0.0.1","local_port":8080,"ttl_hours":6}')
 
-HTTP_CODE=$(echo "$REGISTER_RESPONSE" | tail -1)
-RESPONSE_BODY=$(echo "$REGISTER_RESPONSE" | head -n -1)
+HTTP_CODE=$(echo "$REGISTER_RESPONSE" | tail -n 1)
+RESPONSE_BODY=$(echo "$REGISTER_RESPONSE" | sed '$d')
 
 if [ "$HTTP_CODE" = "200" ]; then
     echo "   ✅ Service registered successfully!"
@@ -244,8 +244,8 @@ echo "📄 Step 4: Verifying service publication..."
 echo ""
 
 LIST_RESPONSE=$(curl -s -w "\n%{http_code}" http://127.0.0.1:$NODE1_API/api/services/list)
-LIST_HTTP_CODE=$(echo "$LIST_RESPONSE" | tail -1)
-LIST_BODY=$(echo "$LIST_RESPONSE" | head -n -1)
+LIST_HTTP_CODE=$(echo "$LIST_RESPONSE" | tail -n 1)
+LIST_BODY=$(echo "$LIST_RESPONSE" | sed '$d')
 
 if [ "$LIST_HTTP_CODE" = "200" ]; then
     SERVICE_COUNT=$(echo "$LIST_BODY" | grep -o '"total":[0-9]*' | cut -d':' -f2)
@@ -282,8 +282,8 @@ echo "🧪 Step 6: Testing local service access..."
 echo ""
 
 RESPONSE=$(curl -s -w "\n%{http_code}" http://127.0.0.1:8080)
-HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-CONTENT=$(echo "$RESPONSE" | head -1)
+HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
+CONTENT=$(echo "$RESPONSE" | head -n 1)
 
 if [ "$HTTP_CODE" = "200" ]; then
     echo "   ✅ Service responding on localhost:8080"
