@@ -117,11 +117,13 @@ A WebExtension that integrates with the AnonNet daemon to display credit balance
 
 The extension communicates with the daemon's REST API:
 
-- `GET http://127.0.0.1:9051/api/credits/balance` - Credit balance
-- `GET http://127.0.0.1:9051/api/credits/stats` - Earning/spending stats
-- `GET http://127.0.0.1:9051/api/network/status` - Network status
-- `GET http://127.0.0.1:9051/api/circuits/active` - Active circuits
-- `GET http://127.0.0.1:9051/health` - Health check
+- `GET http://127.0.0.1:<API_PORT>/api/credits/balance` - Credit balance
+- `GET http://127.0.0.1:<API_PORT>/api/credits/stats` - Earning/spending stats
+- `GET http://127.0.0.1:<API_PORT>/api/network/status` - Network status
+- `GET http://127.0.0.1:<API_PORT>/api/circuits/active` - Active circuits
+- `GET http://127.0.0.1:<API_PORT>/health` - Health check
+
+**Note:** The daemon auto-selects free ports to avoid conflicts. The extension automatically discovers the API port by probing common ports (19150-19155, 9150-9151, 8150). Port numbers are also saved to `./data/api_port.txt`.
 
 ## File Structure
 

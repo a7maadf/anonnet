@@ -26,7 +26,16 @@ impl HttpProxy {
     /// Start the HTTP proxy server
     pub async fn start(&self) -> Result<()> {
         let listener = TcpListener::bind(self.listen_addr).await?;
-        info!("HTTP proxy listening on {}", self.listen_addr);
+        let actual_addr = listener.local_addr()?;
+
+        info!("╔═══════════════════════════════════════════════════╗");
+        info!("║   HTTP Proxy Started on {}   ║", actual_addr);
+        info!("╚═══════════════════════════════════════════════════╝");
+
+        // Save port to file for browser to discover
+        if let Err(e) = std::fs::write("./data/http_port.txt", actual_addr.port().to_string()) {
+            warn!("Failed to write HTTP port file: {}", e);
+        }
 
         let node = self.node.clone();
 
