@@ -59,4 +59,4 @@ pub use network::{
 };
 
 // Re-export node runtime
-pub use node::{Node, NodeStats};
+pub use node::{ActiveCircuitInfo, CreditStats, Node, NodeStats};
