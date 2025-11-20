@@ -134,10 +134,23 @@ impl Node {
         let blockchain = Arc::new(RwLock::new(Blockchain::new(genesis_block)));
 
         // Initialize service directory
-        let service_directory = Arc::new(ServiceDirectory::new(
+        let mut service_directory = ServiceDirectory::new(
             node_id,
             routing_table.clone(),
-        ));
+        );
+
+        // Configure shared descriptor store for testing/development
+        // This enables multi-node service discovery without full P2P DHT protocol
+        // In production, this would be replaced with proper DHT replication
+        let shared_store_path = std::env::var("HOME")
+            .ok()
+            .map(|home| std::path::PathBuf::from(home).join("anonnet-test/shared-descriptors"))
+            .unwrap_or_else(|| std::path::PathBuf::from("/tmp/anonnet-shared-descriptors"));
+
+        service_directory.set_shared_store_path(shared_store_path.clone());
+        tracing::info!("Shared descriptor store: {:?}", shared_store_path);
+
+        let service_directory = Arc::new(service_directory);
 
         // Initialize rendezvous manager
         // Note: RendezvousManager expects unwrapped CircuitManager

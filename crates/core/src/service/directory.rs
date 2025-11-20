@@ -8,6 +8,7 @@ use crate::identity::NodeId;
 use crate::service::{ServiceAddress, ServiceDescriptor};
 use anyhow::Result;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -23,6 +24,10 @@ pub struct ServiceDirectory {
 
     /// Our node ID
     local_id: NodeId,
+
+    /// Optional shared descriptor store path for testing/development
+    /// In production, this would be replaced with proper P2P DHT replication
+    shared_store_path: Option<PathBuf>,
 }
 
 impl ServiceDirectory {
@@ -32,7 +37,16 @@ impl ServiceDirectory {
             routing_table,
             descriptor_cache: Arc::new(RwLock::new(HashMap::new())),
             local_id,
+            shared_store_path: None,
         }
+    }
+
+    /// Set the shared descriptor store path (for testing/development)
+    ///
+    /// This enables file-based descriptor replication between nodes.
+    /// In production, this would be replaced with proper P2P DHT protocol.
+    pub fn set_shared_store_path(&mut self, path: PathBuf) {
+        self.shared_store_path = Some(path);
     }
 
     /// Publish a service descriptor to the DHT
@@ -49,7 +63,7 @@ impl ServiceDirectory {
             .map_err(|e| DirectoryError::InvalidDescriptor(e.to_string()))?;
 
         // Get the DHT key for this service
-        let key = self.descriptor_key(&descriptor.address);
+        let _key = self.descriptor_key(&descriptor.address);
 
         // Store in local cache first
         {
@@ -57,23 +71,42 @@ impl ServiceDirectory {
             cache.insert(descriptor.address, descriptor.clone());
         }
 
-        // Find the k-closest nodes to this key for network publishing
-        let closest_nodes = {
-            let table = self.routing_table.read().await;
-            table
-                .closest_nodes(&key, 20)
-                .iter()
-                .map(|entry| entry.node_id)
-                .collect::<Vec<_>>()
-        };
-
-        if closest_nodes.is_empty() {
-            // No network peers, but we stored locally
-            return Ok(());
+        // SHARED STORE REPLICATION (for testing/development)
+        // Write descriptor to shared file store so all nodes can discover it
+        // In production, this would use proper DHT STORE messages over P2P network
+        if let Some(ref store_path) = self.shared_store_path {
+            if let Err(e) = self.write_to_shared_store(&descriptor, store_path).await {
+                tracing::warn!("Failed to write descriptor to shared store: {}", e);
+                // Don't fail the entire operation if shared store write fails
+            } else {
+                tracing::info!(
+                    "Replicated descriptor {} to shared store",
+                    descriptor.address.to_hostname()
+                );
+            }
         }
 
-        // TODO: Send STORE_DESCRIPTOR messages to closest nodes
-        // This will be implemented when we have the full P2P message protocol
+        Ok(())
+    }
+
+    /// Write descriptor to shared file store
+    async fn write_to_shared_store(
+        &self,
+        descriptor: &ServiceDescriptor,
+        store_path: &PathBuf,
+    ) -> Result<()> {
+        // Create store directory if it doesn't exist
+        tokio::fs::create_dir_all(store_path).await?;
+
+        // Use service address as filename
+        let filename = format!("{}.json", descriptor.address.to_hostname());
+        let file_path = store_path.join(filename);
+
+        // Serialize descriptor to JSON
+        let json = serde_json::to_string_pretty(descriptor)?;
+
+        // Write to file
+        tokio::fs::write(file_path, json).await?;
 
         Ok(())
     }
@@ -105,6 +138,26 @@ impl ServiceDirectory {
         &self,
         address: &ServiceAddress,
     ) -> Result<ServiceDescriptor, DirectoryError> {
+        // SHARED STORE LOOKUP (for testing/development)
+        // Check shared file store before falling back to DHT query
+        // In production, this would query closest nodes via P2P protocol
+        if let Some(ref store_path) = self.shared_store_path {
+            if let Ok(descriptor) = self.read_from_shared_store(address, store_path).await {
+                // Verify descriptor is valid and not expired
+                if descriptor.validate().is_ok() && !descriptor.is_expired() {
+                    // Store in local cache for future lookups
+                    let mut cache = self.descriptor_cache.write().await;
+                    cache.insert(*address, descriptor.clone());
+
+                    tracing::info!(
+                        "Found descriptor {} in shared store",
+                        address.to_hostname()
+                    );
+                    return Ok(descriptor);
+                }
+            }
+        }
+
         // Get the DHT key for this service
         let key = self.descriptor_key(address);
 
@@ -127,6 +180,25 @@ impl ServiceDirectory {
 
         // For now, return error
         Err(DirectoryError::ServiceNotFound)
+    }
+
+    /// Read descriptor from shared file store
+    async fn read_from_shared_store(
+        &self,
+        address: &ServiceAddress,
+        store_path: &PathBuf,
+    ) -> Result<ServiceDescriptor> {
+        // Build file path
+        let filename = format!("{}.json", address.to_hostname());
+        let file_path = store_path.join(filename);
+
+        // Read file
+        let json = tokio::fs::read_to_string(file_path).await?;
+
+        // Deserialize descriptor
+        let descriptor: ServiceDescriptor = serde_json::from_str(&json)?;
+
+        Ok(descriptor)
     }
 
     /// Store a descriptor received from the network
