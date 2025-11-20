@@ -260,6 +260,46 @@ impl Node {
         self.connection_manager.clone()
     }
 
+    /// Get current credit balance for this node
+    pub async fn get_credit_balance(&self) -> Credits {
+        let ledger = self.credit_ledger.read().await;
+        ledger.get_balance(&self.node_id())
+    }
+
+    /// Get credit statistics (earned, spent, rates)
+    pub async fn get_credit_stats(&self) -> CreditStats {
+        let ledger = self.credit_ledger.read().await;
+        let balance = ledger.get_balance(&self.node_id());
+
+        // TODO: Implement tracking of total earned/spent
+        // For now, return placeholder values based on balance
+        CreditStats {
+            total_earned: balance.amount(),
+            total_spent: 0,
+            earning_rate: 0.0,
+            spending_rate: 0.0,
+        }
+    }
+
+    /// Get information about active circuits
+    pub async fn get_active_circuits(&self) -> Vec<ActiveCircuitInfo> {
+        let manager = self.circuit_manager.read().await;
+        let circuits = manager.all_circuits();
+
+        // Convert circuits to info structs
+        circuits
+            .iter()
+            .map(|c| ActiveCircuitInfo {
+                circuit_id: c.id,
+                purpose: c.purpose,
+                state: c.state,
+                hops: c.nodes.len(),
+                age_seconds: c.created_at.elapsed().as_secs(),
+                use_count: 0, // TODO: Track circuit use count
+            })
+            .collect()
+    }
+
     /// Load or generate node identity
     async fn load_or_generate_identity(config: &NodeConfig) -> Result<(Identity, ProofOfWork)> {
         let data_dir = std::path::PathBuf::from(&config.data_dir);
@@ -582,6 +622,36 @@ pub struct NodeStats {
     pub active_circuits: usize,
     pub bandwidth: u64,
     pub is_running: bool,
+}
+
+/// Credit statistics
+#[derive(Debug, Clone)]
+pub struct CreditStats {
+    /// Total credits earned from relaying
+    pub total_earned: u64,
+    /// Total credits spent on circuits
+    pub total_spent: u64,
+    /// Current earning rate (credits per hour)
+    pub earning_rate: f64,
+    /// Current spending rate (credits per hour)
+    pub spending_rate: f64,
+}
+
+/// Active circuit information
+#[derive(Debug, Clone)]
+pub struct ActiveCircuitInfo {
+    /// Circuit ID
+    pub circuit_id: crate::circuit::CircuitId,
+    /// Circuit purpose
+    pub purpose: crate::circuit::CircuitPurpose,
+    /// Circuit state
+    pub state: crate::circuit::CircuitState,
+    /// Number of hops
+    pub hops: usize,
+    /// Age in seconds
+    pub age_seconds: u64,
+    /// Number of times used
+    pub use_count: usize,
 }
 
 #[cfg(test)]

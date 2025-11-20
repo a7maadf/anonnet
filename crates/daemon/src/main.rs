@@ -15,7 +15,7 @@ use tracing_subscriber;
 
 use anonnet_core::{Node, NodeStats};
 use anonnet_common::NodeConfig;
-use anonnet_daemon::ProxyManager;
+use anonnet_daemon::{ApiServer, ProxyManager};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -78,9 +78,19 @@ async fn run_proxy_mode() -> Result<()> {
     // Default proxy addresses
     let socks5_addr: SocketAddr = "127.0.0.1:9050".parse()?;
     let http_addr: SocketAddr = "127.0.0.1:8118".parse()?;
+    let api_addr: SocketAddr = "127.0.0.1:9051".parse()?;
 
     info!("SOCKS5 proxy will listen on: {}", socks5_addr);
     info!("HTTP proxy will listen on: {}", http_addr);
+    info!("API server will listen on: {}", api_addr);
+
+    // Start API server in background
+    let api_server = ApiServer::new(api_addr, node.clone());
+    tokio::spawn(async move {
+        if let Err(e) = api_server.start().await {
+            warn!("API server error: {}", e);
+        }
+    });
 
     // Create and start proxy manager with node
     let proxy_manager = ProxyManager::new(socks5_addr, http_addr, node.clone());
