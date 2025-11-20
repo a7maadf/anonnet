@@ -164,7 +164,7 @@ echo ""
 # Start bootstrap
 echo "Starting bootstrap node..."
 cd ~/anonnet-test/bootstrap
-"$DAEMON" node 2>&1 >> bootstrap.log &
+"$DAEMON" proxy 2>&1 >> bootstrap.log &
 echo $! > bootstrap.pid
 echo "  ✅ Bootstrap PID: $(cat bootstrap.pid)"
 
@@ -181,7 +181,7 @@ fi
 for i in 1 2 3; do
   echo "Starting relay node $i..."
   cd ~/anonnet-test/node$i
-  "$DAEMON" node 2>&1 >> node$i.log &
+  "$DAEMON" proxy 2>&1 >> node$i.log &
   echo $! > node$i.pid
   echo "  ✅ Node $i PID: $(cat node$i.pid)"
   sleep 2
@@ -190,7 +190,7 @@ done
 # Start client node
 echo "Starting client node 4..."
 cd ~/anonnet-test/node4
-"$DAEMON" node 2>&1 >> node4.log &
+"$DAEMON" proxy 2>&1 >> node4.log &
 echo $! > node4.pid
 echo "  ✅ Node 4 PID: $(cat node4.pid)"
 
