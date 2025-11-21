@@ -187,6 +187,65 @@ body {
     color: #ff9800;
 }
 
+/* Circuit Visualization */
+.circuit-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #fff;
+}
+
+.circuit-card h3 {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.circuit-path {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 15px 0;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    overflow-x: auto;
+}
+
+.circuit-node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    min-width: 50px;
+}
+
+.node-icon {
+    font-size: 24px;
+}
+
+.node-label {
+    font-size: 11px;
+    opacity: 0.9;
+    text-align: center;
+}
+
+.circuit-arrow {
+    font-size: 16px;
+    opacity: 0.7;
+    padding: 0 5px;
+}
+
+.circuit-info {
+    text-align: center;
+    font-size: 12px;
+    opacity: 0.9;
+    margin-top: 10px;
+}
+
+.circuit-hops {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 5px 12px;
+    border-radius: 12px;
+    display: inline-block;
+}
+
 /* Network Stats */
 .network-stats {
     display: flex;

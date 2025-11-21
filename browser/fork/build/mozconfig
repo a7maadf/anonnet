@@ -1,0 +1,66 @@
+# AnonNet Browser Build Configuration
+# Based on Firefox ESR with Tor Browser hardening
+
+# Build application
+ac_add_options --enable-application=browser
+
+# Branding
+ac_add_options --with-branding=browser/branding/anonnet
+ac_add_options --with-distribution-id=org.anonnet
+
+# Optimization
+ac_add_options --enable-optimize
+ac_add_options --enable-release
+ac_add_options --disable-debug
+ac_add_options --disable-debug-symbols
+ac_add_options --enable-strip
+ac_add_options --enable-install-strip
+
+# Hardening (Tor Browser style)
+ac_add_options --enable-hardening
+ac_add_options --enable-rust-simd
+
+# Disable unwanted features
+ac_add_options --disable-crashreporter
+ac_add_options --disable-updater  # We have our own update mechanism
+ac_add_options --disable-tests
+ac_add_options --disable-maintenance-service
+ac_add_options --disable-parental-controls
+ac_add_options --disable-accessibility  # Fingerprinting vector
+ac_add_options --disable-webrtc  # Privacy risk
+ac_add_options --disable-eme  # DRM
+ac_add_options --disable-gio  # Reduces attack surface
+ac_add_options --disable-pulseaudio  # Audio fingerprinting
+
+# Privacy features
+ac_add_options --enable-privacy
+ac_add_options --disable-telemetry
+ac_add_options --disable-necko-wifi  # Geolocation
+ac_add_options --disable-webspeech
+ac_add_options --disable-webspeechtestbackend
+
+# Build artifacts
+ac_add_options --with-l10n-base=../../l10n
+mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-@CONFIG_GUESS@
+
+# Compiler
+export CC=clang
+export CXX=clang++
+
+# Rust
+export RUSTC_OPT_LEVEL=2
+
+# Custom preferences
+export MOZ_REQUIRE_SIGNING=0  # Allow unsigned system add-ons
+
+# Product information
+export MOZ_APP_NAME=anonnet-browser
+export MOZ_APP_VENDOR=AnonNet
+export MOZ_APP_BASENAME=AnonNet
+export MOZ_UPDATE_CHANNEL=release
+
+# Disable automatic updates (we handle this ourselves)
+export MOZ_UPDATER=0
+
+# Build ID
+export MOZ_BUILD_DATE=$(date +%Y%m%d%H%M%S)
