@@ -135,7 +135,9 @@ impl Default for NodeConfig {
         Self {
             listen_addr: "0.0.0.0".to_string(),
             listen_port: protocol::DEFAULT_PORT,
-            bootstrap_nodes: vec![],
+            bootstrap_nodes: vec![
+                "37.114.50.194:9090".to_string(),
+            ],
             accept_relay: true,
             max_peers: 50,
             data_dir: "./data".to_string(),

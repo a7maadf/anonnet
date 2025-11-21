@@ -8,7 +8,7 @@ Your production-ready distribution is complete and available at:
 
 ### Checksum
 ```
-SHA256: e9cde56595bf7df058219b71478c922513639e35344be8913c2e14cc1cf887d6
+SHA256: b7091cc0730f948d6f6c7bf1be0903a1090719c4da5c5b6e046efcf95f915764
 ```
 
 ## 🎯 Distribution Contents
@@ -140,17 +140,15 @@ GET  /api/services/list           - List services
 
 ## 📝 Configuration
 
-### Bootstrap Nodes (config.toml)
-```toml
-[network]
-bootstrap_nodes = [
-    "bootstrap1.example.com:9090",
-    "bootstrap2.example.com:9090"
-]
-```
+### Bootstrap Nodes
 
-**⚠️ Important:** You need to provide your two bootstrap server addresses
-to hardcode into the distribution before public release.
+**✅ Bootstrap node is hardcoded and ready!**
+
+The distribution includes a production bootstrap node:
+- **37.114.50.194:9090**
+
+This bootstrap address is automatically used by all nodes to join the network.
+No manual configuration required for end users!
 
 ### Browser Setup
 
@@ -235,7 +233,7 @@ Data directory (`~/.anonnet/data/`) is preserved across upgrades.
 
 ## 📋 Checklist Before Public Release
 
-- [ ] Add your two bootstrap node addresses
+- [x] Add bootstrap node address (37.114.50.194:9090)
 - [ ] Test on fresh system
 - [ ] Verify all commands work
 - [ ] Test browser extension loading
@@ -274,4 +272,4 @@ All changes committed and pushed to GitHub.
 
 **Ready to launch! 🎊**
 
-Just add your bootstrap addresses and you're good to go!
+Bootstrap node configured and ready for production deployment!
