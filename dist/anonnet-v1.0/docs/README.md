@@ -470,11 +470,14 @@ wget --proxy=on --http-proxy=localhost:$HTTP_PORT http://example.anon
 
 ### Network Parameters
 
+**Note:** Bootstrap node is already configured in the daemon. No manual setup required!
+
 ```toml
 [network]
 # P2P settings
-bootstrap_nodes = ["node1.anonnet.org:9001", "node2.anonnet.org:9001"]
-listen_addr = "0.0.0.0:9001"
+# Production bootstrap node (pre-configured):
+bootstrap_nodes = ["37.114.50.194:9090"]
+listen_addr = "0.0.0.0:9090"
 max_peers = 50
 
 # Circuit settings
