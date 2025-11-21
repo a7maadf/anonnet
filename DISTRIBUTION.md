@@ -8,7 +8,7 @@ Your production-ready distribution is complete and available at:
 
 ### Checksum
 ```
-SHA256: b7091cc0730f948d6f6c7bf1be0903a1090719c4da5c5b6e046efcf95f915764
+SHA256: 467e5f033901af9d43fae607ae0df2ee05b2c452e0f9cdb75172c4ef710b28f7
 ```
 
 ## 🎯 Distribution Contents

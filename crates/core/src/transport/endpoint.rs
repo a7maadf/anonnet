@@ -43,8 +43,8 @@ impl Endpoint {
         let key = rustls::pki_types::PrivateKeyDer::try_from(key_der)
             .map_err(|e| EndpointError::CertGeneration(format!("Invalid key: {:?}", e)))?;
 
-        // Create server config with crypto provider
-        let server_crypto = rustls::ServerConfig::builder_with_provider(
+        // Create server config with crypto provider and ALPN
+        let mut server_crypto = rustls::ServerConfig::builder_with_provider(
                 Arc::new(rustls::crypto::ring::default_provider())
             )
             .with_safe_default_protocol_versions()
@@ -52,6 +52,9 @@ impl Endpoint {
             .with_no_client_auth()
             .with_single_cert(cert_chain, key)
             .map_err(|e| EndpointError::ConfigCreation(e.to_string()))?;
+
+        // Set ALPN protocols (required for QUIC)
+        server_crypto.alpn_protocols = vec![b"anonnet/1".to_vec()];
 
         let mut server_config = quinn::ServerConfig::with_crypto(Arc::new(
             quinn::crypto::rustls::QuicServerConfig::try_from(server_crypto)
@@ -78,7 +81,7 @@ impl Endpoint {
     fn create_client_config() -> Result<quinn::ClientConfig, EndpointError> {
         // Skip certificate verification for P2P network
         // In production, we'd verify based on NodeID
-        let crypto = rustls::ClientConfig::builder_with_provider(
+        let mut crypto = rustls::ClientConfig::builder_with_provider(
                 Arc::new(rustls::crypto::ring::default_provider())
             )
             .with_safe_default_protocol_versions()
@@ -86,6 +89,9 @@ impl Endpoint {
             .dangerous()
             .with_custom_certificate_verifier(Arc::new(SkipServerVerification))
             .with_no_client_auth();
+
+        // Set ALPN protocols (required for QUIC)
+        crypto.alpn_protocols = vec![b"anonnet/1".to_vec()];
 
         let mut client_config = quinn::ClientConfig::new(Arc::new(
             quinn::crypto::rustls::QuicClientConfig::try_from(crypto)
