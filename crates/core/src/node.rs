@@ -379,7 +379,11 @@ impl Node {
 
         // Wire managers into message dispatcher for relay cell handling
         self.message_dispatcher.set_circuit_manager(self.circuit_manager.clone()).await;
-        self.message_dispatcher.set_connection_manager(connection_manager).await;
+        self.message_dispatcher.set_connection_manager(connection_manager.clone()).await;
+
+        // Wire connection manager into service directory for P2P descriptor replication
+        self.service_directory.set_connection_manager(connection_manager).await;
+        info!("ServiceDirectory configured for P2P descriptor replication");
 
         Ok(())
     }

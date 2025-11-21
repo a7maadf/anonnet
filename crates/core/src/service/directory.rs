@@ -5,6 +5,10 @@
 
 use crate::dht::RoutingTable;
 use crate::identity::NodeId;
+use crate::network::ConnectionManager;
+use crate::protocol::messages::{
+    FindValueMessage, Message, MessagePayload, StoreMessage, Signature64, ValueFoundMessage,
+};
 use crate::service::{ServiceAddress, ServiceDescriptor};
 use anyhow::Result;
 use std::collections::HashMap;
@@ -28,6 +32,9 @@ pub struct ServiceDirectory {
     /// Optional shared descriptor store path for testing/development
     /// In production, this would be replaced with proper P2P DHT replication
     shared_store_path: Option<PathBuf>,
+
+    /// Connection manager for P2P messaging (set after initialization)
+    connection_manager: Arc<RwLock<Option<Arc<ConnectionManager>>>>,
 }
 
 impl ServiceDirectory {
@@ -38,7 +45,15 @@ impl ServiceDirectory {
             descriptor_cache: Arc::new(RwLock::new(HashMap::new())),
             local_id,
             shared_store_path: None,
+            connection_manager: Arc::new(RwLock::new(None)),
         }
+    }
+
+    /// Set the connection manager (called after initialization)
+    ///
+    /// Required for P2P descriptor replication over the network
+    pub async fn set_connection_manager(&self, connection_manager: Arc<ConnectionManager>) {
+        *self.connection_manager.write().await = Some(connection_manager);
     }
 
     /// Set the shared descriptor store path (for testing/development)
@@ -73,7 +88,7 @@ impl ServiceDirectory {
 
         // SHARED STORE REPLICATION (for testing/development)
         // Write descriptor to shared file store so all nodes can discover it
-        // In production, this would use proper DHT STORE messages over P2P network
+        // This is a fallback for local testing when P2P network isn't available
         if let Some(ref store_path) = self.shared_store_path {
             if let Err(e) = self.write_to_shared_store(&descriptor, store_path).await {
                 tracing::warn!("Failed to write descriptor to shared store: {}", e);
@@ -83,6 +98,62 @@ impl ServiceDirectory {
                     "Replicated descriptor {} to shared store",
                     descriptor.address.to_hostname()
                 );
+            }
+        }
+
+        // P2P DHT REPLICATION (production mode)
+        // Send STORE messages to K-closest nodes in the network
+        if let Some(connection_manager) = self.connection_manager.read().await.clone() {
+            let key = self.descriptor_key(&descriptor.address);
+
+            // Get K-closest nodes (excluding ourselves)
+            let closest_nodes = {
+                let table = self.routing_table.read().await;
+                table
+                    .closest_nodes(&key, 20)
+                    .iter()
+                    .filter(|entry| entry.node_id != self.local_id)
+                    .map(|entry| entry.node_id)
+                    .collect::<Vec<_>>()
+            };
+
+            if !closest_nodes.is_empty() {
+                tracing::info!(
+                    "Replicating descriptor {} to {} nodes via DHT",
+                    descriptor.address.to_hostname(),
+                    closest_nodes.len()
+                );
+
+                // Serialize descriptor for DHT storage
+                let descriptor_bytes = match serde_json::to_vec(&descriptor) {
+                    Ok(bytes) => bytes,
+                    Err(e) => {
+                        tracing::warn!("Failed to serialize descriptor: {}", e);
+                        return Ok(());
+                    }
+                };
+
+                // Send STORE message to each closest node
+                for node_id in closest_nodes {
+                    if let Some(handler) = connection_manager.get_connection(&node_id) {
+                        let store_msg = Message::new(MessagePayload::Store(StoreMessage {
+                            key: *key.as_bytes(),
+                            value: descriptor_bytes.clone(),
+                            publisher: self.local_id,
+                            ttl: descriptor.ttl.as_secs(),
+                            signature: None,
+                        }));
+
+                        // Send as one-way message (don't wait for response)
+                        if let Err(e) = handler.send_message(store_msg).await {
+                            tracing::debug!("Failed to send STORE to {}: {}", node_id, e);
+                        } else {
+                            tracing::debug!("Sent STORE to {} for descriptor {}", node_id, descriptor.address.to_hostname());
+                        }
+                    }
+                }
+            } else {
+                tracing::info!("No network peers available for DHT replication");
             }
         }
 
@@ -140,7 +211,7 @@ impl ServiceDirectory {
     ) -> Result<ServiceDescriptor, DirectoryError> {
         // SHARED STORE LOOKUP (for testing/development)
         // Check shared file store before falling back to DHT query
-        // In production, this would query closest nodes via P2P protocol
+        // This is a fallback for local testing when P2P network isn't available
         if let Some(ref store_path) = self.shared_store_path {
             if let Ok(descriptor) = self.read_from_shared_store(address, store_path).await {
                 // Verify descriptor is valid and not expired
@@ -158,27 +229,80 @@ impl ServiceDirectory {
             }
         }
 
-        // Get the DHT key for this service
-        let key = self.descriptor_key(address);
+        // P2P DHT LOOKUP (production mode)
+        // Query K-closest nodes for the descriptor
+        if let Some(connection_manager) = self.connection_manager.read().await.clone() {
+            let key = self.descriptor_key(address);
 
-        // Find closest nodes
-        let closest_nodes = {
-            let table = self.routing_table.read().await;
-            table
-                .closest_nodes(&key, 20)
-                .iter()
-                .map(|entry| entry.node_id)
-                .collect::<Vec<_>>()
-        };
+            // Find closest nodes (excluding ourselves)
+            let closest_nodes = {
+                let table = self.routing_table.read().await;
+                table
+                    .closest_nodes(&key, 20)
+                    .iter()
+                    .filter(|entry| entry.node_id != self.local_id)
+                    .map(|entry| entry.node_id)
+                    .collect::<Vec<_>>()
+            };
 
-        if closest_nodes.is_empty() {
-            return Err(DirectoryError::ServiceNotFound);
+            if !closest_nodes.is_empty() {
+                tracing::info!(
+                    "Querying {} nodes for descriptor {}",
+                    closest_nodes.len(),
+                    address.to_hostname()
+                );
+
+                // Query each node for the descriptor
+                for node_id in closest_nodes {
+                    if let Some(handler) = connection_manager.get_connection(&node_id) {
+                        let find_value_msg = Message::new(MessagePayload::FindValue(FindValueMessage {
+                            key: *key.as_bytes(),
+                        }));
+
+                        // Send request and wait for response
+                        match handler.send_request(find_value_msg).await {
+                            Ok(response) => {
+                                if let MessagePayload::ValueFound(value_found) = response.payload {
+                                    if value_found.found && !value_found.values.is_empty() {
+                                        // Deserialize the descriptor
+                                        for stored_value in value_found.values {
+                                            match serde_json::from_slice::<ServiceDescriptor>(&stored_value.data) {
+                                                Ok(descriptor) => {
+                                                    // Verify it's valid and not expired
+                                                    if descriptor.validate().is_ok() && !descriptor.is_expired() {
+                                                        tracing::info!(
+                                                            "Found descriptor {} from node {}",
+                                                            address.to_hostname(),
+                                                            node_id
+                                                        );
+
+                                                        // Cache locally
+                                                        let mut cache = self.descriptor_cache.write().await;
+                                                        cache.insert(*address, descriptor.clone());
+
+                                                        return Ok(descriptor);
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    tracing::warn!("Failed to deserialize descriptor from {}: {}", node_id, e);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                tracing::debug!("Failed to query {}: {}", node_id, e);
+                            }
+                        }
+                    }
+                }
+            } else {
+                tracing::warn!("No network peers available for DHT lookup");
+            }
         }
 
-        // TODO: Send FIND_DESCRIPTOR messages to closest nodes
-        // This will be implemented when we have the full P2P message protocol
-
-        // For now, return error
+        // Not found
         Err(DirectoryError::ServiceNotFound)
     }
 
