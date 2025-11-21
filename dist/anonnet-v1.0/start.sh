@@ -64,7 +64,7 @@ case $choice in
         echo ""
         echo "Press Ctrl+C to stop"
         echo ""
-        ./bin/anonnet-daemon
+        ./bin/anonnet-daemon --bootstrap
         ;;
     5)
         echo ""

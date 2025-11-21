@@ -28,6 +28,12 @@ impl Identity {
         Ok(Self { keypair, node_id })
     }
 
+    /// Create an identity from an existing keypair
+    pub fn from_keypair(keypair: KeyPair) -> Self {
+        let node_id = NodeId::from_public_key(&keypair.public_key());
+        Self { keypair, node_id }
+    }
+
     /// Get the keypair
     pub fn keypair(&self) -> &KeyPair {
         &self.keypair

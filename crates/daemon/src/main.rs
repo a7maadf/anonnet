@@ -45,6 +45,12 @@ async fn main() -> Result<()> {
             "node" => {
                 run_node_mode().await?;
             }
+            "bootstrap" | "--bootstrap" => {
+                run_bootstrap_mode().await?;
+            }
+            "--accept-relay" | "--relay" | "relay" => {
+                run_accept_relay_mode().await?;
+            }
             _ => {
                 eprintln!("Unknown command: {}", args[1]);
                 eprintln!("Run with 'help' to see available commands");
@@ -115,24 +121,7 @@ async fn run_proxy_mode() -> Result<()> {
 async fn run_node_mode() -> Result<()> {
     info!("Running in full node mode");
 
-    // Load or create default configuration
-    let config_path = PathBuf::from("anonnet.toml");
-    let config = if config_path.exists() {
-        info!("Loading configuration from {:?}", config_path);
-        NodeConfig::from_file(&config_path)?
-    } else {
-        info!("No configuration file found, using defaults");
-        let config = NodeConfig::default();
-
-        // Save default config for next time
-        if let Err(e) = config.to_file(&config_path) {
-            warn!("Failed to save default config: {}", e);
-        } else {
-            info!("Saved default configuration to {:?}", config_path);
-        }
-
-        config
-    };
+    let config = load_or_create_config();
 
     // Create and start node
     info!("Creating AnonNet node...");
@@ -156,6 +145,94 @@ async fn run_node_mode() -> Result<()> {
 
     info!("Node stopped");
     Ok(())
+}
+
+/// Run in bootstrap mode (no upstream bootstrap peers configured)
+async fn run_bootstrap_mode() -> Result<()> {
+    info!("Running in bootstrap mode");
+
+    let mut config = load_or_create_config();
+    if !config.bootstrap_nodes.is_empty() {
+        info!("Clearing configured bootstrap nodes for bootstrap mode");
+        config.bootstrap_nodes.clear();
+    }
+
+    info!("Creating AnonNet bootstrap node...");
+    let mut node = Node::new(config).await?;
+
+    info!("Starting bootstrap node...");
+    node.start().await?;
+
+    let stats = node.get_stats().await;
+    print_node_stats(&stats);
+
+    info!("Bootstrap node is running. Press Ctrl+C to stop.");
+
+    tokio::signal::ctrl_c().await?;
+
+    info!("Shutdown signal received");
+    node.stop().await?;
+
+    info!("Bootstrap node stopped");
+    Ok(())
+}
+
+/// Run in node mode ensuring relay support is enabled
+async fn run_accept_relay_mode() -> Result<()> {
+    info!("Running in relay mode (accepting traffic)");
+
+    let mut config = load_or_create_config();
+    if !config.accept_relay {
+        info!("Enabling relay acceptance as requested");
+        config.accept_relay = true;
+    }
+
+    info!("Creating AnonNet relay node...");
+    let mut node = Node::new(config).await?;
+
+    info!("Starting relay node...");
+    node.start().await?;
+
+    let stats = node.get_stats().await;
+    print_node_stats(&stats);
+
+    info!("Relay node is running. Press Ctrl+C to stop.");
+
+    tokio::signal::ctrl_c().await?;
+
+    info!("Shutdown signal received");
+    node.stop().await?;
+
+    info!("Relay node stopped");
+    Ok(())
+}
+
+/// Load configuration from file or create defaults and persist them
+fn load_or_create_config() -> NodeConfig {
+    // Load or create default configuration
+    let config_path = PathBuf::from("anonnet.toml");
+    if config_path.exists() {
+        info!("Loading configuration from {:?}", config_path);
+        match NodeConfig::from_file(&config_path) {
+            Ok(config) => config,
+            Err(e) => {
+                warn!("Failed to load config (using defaults): {}", e);
+                NodeConfig::default()
+            }
+        }
+    } else {
+        info!("No configuration file found, using defaults");
+        let config = NodeConfig::default();
+
+        // Save default config for next time
+        if let Err(e) = config.to_file(&config_path) {
+            warn!("Failed to save default config: {}", e);
+        } else {
+            info!("Saved default configuration to {:?}", config_path);
+        }
+
+        config
+    }
 }
 
 /// Print node statistics
@@ -183,6 +260,10 @@ fn print_help() {
     println!("COMMANDS:");
     println!("    proxy       Run SOCKS5 and HTTP proxy services (default)");
     println!("    node        Run full AnonNet node with DHT, circuits, and consensus");
+    println!("    bootstrap   Run as a bootstrap node (no upstream bootstrap peers)");
+    println!("    --bootstrap Alias for bootstrap mode");
+    println!("    --accept-relay Run full node and ensure relay traffic is accepted");
+    println!("    --relay      Alias for relay mode");
     println!("    help        Show this help message");
     println!("    version     Show version information");
     println!();

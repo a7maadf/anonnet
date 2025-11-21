@@ -445,7 +445,7 @@ mod tests {
         let node_id = NodeId::from_public_key(&keypair.public_key());
         let dht = Arc::new(RwLock::new(DHT::new(node_id, vec![])));
 
-        let dispatcher = MessageDispatcher::new(dht);
+        let dispatcher = MessageDispatcher::new(dht).await;
 
         let ping = PingMessage { nonce: 12345 };
         let response = dispatcher.handle_ping(ping);
@@ -476,7 +476,7 @@ mod tests {
             }
         }
 
-        let dispatcher = MessageDispatcher::new(dht);
+        let dispatcher = MessageDispatcher::new(dht).await;
 
         let target_kp = KeyPair::generate();
         let target = NodeId::from_public_key(&target_kp.public_key());

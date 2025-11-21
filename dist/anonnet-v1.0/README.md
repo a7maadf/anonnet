@@ -39,11 +39,15 @@ Or use the browser extension for automatic configuration.
 
 ```bash
 ./bin/anonnet-daemon --bootstrap
+# or
+./bin/anonnet-daemon bootstrap
 ```
 
 ### 3. Run as Relay (Earn Credits)
 
 ```bash
+./bin/anonnet-daemon --accept-relay
+# or
 ./bin/anonnet-daemon --relay
 ```
 
