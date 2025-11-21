@@ -43,6 +43,12 @@ pub struct NetworkStatusResponse {
     pub active_circuits: usize,
     /// Total bandwidth (bytes/sec)
     pub bandwidth: u64,
+    /// Average circuit hops
+    pub average_circuit_hops: f32,
+    /// Whether circuits are insecure (less than 3 hops)
+    pub insecure_circuits: bool,
+    /// Security warning message (if any)
+    pub security_warning: Option<String>,
 }
 
 /// Active circuit information

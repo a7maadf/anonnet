@@ -73,11 +73,24 @@ impl PathSelector {
         // Get all potential nodes
         let candidates = Self::get_candidates(routing_table, criteria);
 
-        if candidates.len() < criteria.circuit_length {
+        if candidates.is_empty() {
             return Err(PathSelectionError::InsufficientNodes {
-                available: candidates.len(),
+                available: 0,
                 required: criteria.circuit_length,
             });
+        }
+
+        // Use fewer hops if not enough nodes available (for early network growth)
+        // This allows the network to function with 1-2 hops initially
+        let actual_length = candidates.len().min(criteria.circuit_length)
+            .max(routing::MIN_CIRCUIT_LENGTH);
+
+        if actual_length < routing::RECOMMENDED_CIRCUIT_LENGTH {
+            tracing::warn!(
+                "Creating circuit with {} hops (recommended: {}). Network still growing.",
+                actual_length,
+                routing::RECOMMENDED_CIRCUIT_LENGTH
+            );
         }
 
         // Group candidates by quality (reputation-based)
@@ -99,8 +112,8 @@ impl PathSelector {
         let mut selected = Vec::new();
 
         // Strategy: Use high-quality nodes when possible, fallback to medium/low
-        for i in 0..criteria.circuit_length {
-            let pool = if i == 0 || i == criteria.circuit_length - 1 {
+        for i in 0..actual_length {
+            let pool = if i == 0 || i == actual_length - 1 {
                 // Entry and exit nodes should be high quality
                 if !high_quality.is_empty() {
                     &high_quality
