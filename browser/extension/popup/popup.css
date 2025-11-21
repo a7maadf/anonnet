@@ -70,6 +70,15 @@ body {
     animation: none;
 }
 
+.status-indicator.warning .status-dot {
+    background: #ff9800;
+    animation: pulse 2s infinite;
+}
+
+.status-indicator.warning .status-text {
+    color: #ffeb3b;
+}
+
 .status-text {
     font-size: 14px;
     font-weight: 500;

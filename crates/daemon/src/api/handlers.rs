@@ -57,6 +57,23 @@ pub async fn get_network_status(
     debug!("API: GET /api/network/status");
 
     let stats = state.node.get_stats().await;
+    let circuits = state.node.get_active_circuits().await;
+
+    // Calculate average circuit hops
+    let total_hops: usize = circuits.iter().map(|c| c.hops).sum();
+    let average_hops = if circuits.is_empty() {
+        0.0
+    } else {
+        total_hops as f32 / circuits.len() as f32
+    };
+
+    // Check for insecure circuits (< 3 hops)
+    let insecure = circuits.iter().any(|c| c.hops < 3);
+    let security_warning = if insecure {
+        Some("Network still growing: Using reduced-hop circuits. Anonymity may be limited.".to_string())
+    } else {
+        None
+    };
 
     Ok(Json(NetworkStatusResponse {
         node_id: stats.node_id.to_string(),
@@ -66,6 +83,9 @@ pub async fn get_network_status(
         total_circuits: stats.circuits,
         active_circuits: stats.active_circuits,
         bandwidth: stats.bandwidth,
+        average_circuit_hops: average_hops,
+        insecure_circuits: insecure,
+        security_warning,
     }))
 }
 

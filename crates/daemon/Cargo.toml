@@ -3,6 +3,14 @@ name = "anonnet-daemon"
 version.workspace = true
 edition.workspace = true
 
+[[bin]]
+name = "anonnet-daemon"
+path = "src/main.rs"
+
+[[bin]]
+name = "anonweb"
+path = "src/bin/anonweb.rs"
+
 [dependencies]
 anonnet-common = { path = "../common" }
 anonnet-core = { path = "../core" }

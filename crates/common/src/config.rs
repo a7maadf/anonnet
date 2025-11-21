@@ -52,8 +52,12 @@ pub mod routing {
     /// Default circuit length (number of hops)
     pub const DEFAULT_CIRCUIT_LENGTH: usize = 3;
 
-    /// Minimum circuit length
-    pub const MIN_CIRCUIT_LENGTH: usize = 2;
+    /// Minimum circuit length (reduced to 1 for early network growth)
+    /// WARNING: 1-2 hop circuits provide reduced anonymity
+    pub const MIN_CIRCUIT_LENGTH: usize = 1;
+
+    /// Recommended circuit length for security
+    pub const RECOMMENDED_CIRCUIT_LENGTH: usize = 3;
 
     /// Maximum circuit length
     pub const MAX_CIRCUIT_LENGTH: usize = 8;

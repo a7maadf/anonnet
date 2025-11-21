@@ -91,11 +91,33 @@ function updateNetworkUI(data) {
     elements.bandwidth.textContent = formatBytes(data.bandwidth);
     elements.nodeId.textContent = truncateNodeId(data.node_id);
 
-    // Update status indicator
+    // Update circuit hops info
+    const circuitHopsElement = document.getElementById('circuit-hops');
+    if (circuitHopsElement) {
+        const avgHops = data.average_circuit_hops || 0;
+        circuitHopsElement.textContent = `${avgHops.toFixed(1)}-hop circuit (avg)`;
+
+        // Show warning if insecure
+        if (data.insecure_circuits) {
+            circuitHopsElement.style.color = '#ff9800';
+            circuitHopsElement.textContent += ' ⚠️';
+        } else {
+            circuitHopsElement.style.color = '';
+        }
+    }
+
+    // Update status indicator and show security warning
     if (data.is_running) {
         elements.statusIndicator.classList.add('connected');
         elements.statusIndicator.classList.remove('disconnected');
-        elements.statusText.textContent = 'Connected to AnonNet';
+
+        if (data.security_warning) {
+            elements.statusText.textContent = data.security_warning;
+            elements.statusIndicator.classList.add('warning');
+        } else {
+            elements.statusText.textContent = 'Connected to AnonNet';
+            elements.statusIndicator.classList.remove('warning');
+        }
     } else {
         elements.statusIndicator.classList.add('disconnected');
         elements.statusIndicator.classList.remove('connected');
