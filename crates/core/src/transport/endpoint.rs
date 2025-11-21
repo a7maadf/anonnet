@@ -110,8 +110,14 @@ impl Endpoint {
             .connect(addr, "anonnet.local")
             .map_err(|e| EndpointError::ConnectionFailed(e.to_string()))?;
 
-        let connection = connecting.await
-            .map_err(|e| EndpointError::ConnectionFailed(e.to_string()))?;
+        // Add connection timeout (30 seconds)
+        let connection = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            connecting
+        )
+        .await
+        .map_err(|_| EndpointError::ConnectionFailed("timed out".to_string()))?
+        .map_err(|e| EndpointError::ConnectionFailed(e.to_string()))?;
 
         Ok(super::Connection::new(connection))
     }
