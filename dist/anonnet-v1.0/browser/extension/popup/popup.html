@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AnonNet Status</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                    <circle cx="16" cy="16" r="14" stroke="#4a90e2" stroke-width="2" fill="none"/>
+                    <circle cx="16" cy="16" r="10" stroke="#4a90e2" stroke-width="2" fill="none"/>
+                    <circle cx="16" cy="16" r="6" stroke="#4a90e2" stroke-width="2" fill="none"/>
+                    <circle cx="16" cy="16" r="3" fill="#4a90e2"/>
+                </svg>
+            </div>
+            <div class="title">
+                <h1>AnonNet</h1>
+                <p class="subtitle">Anonymous Network Status</p>
+            </div>
+        </div>
+
+        <!-- Connection Status -->
+        <div class="status-section">
+            <div class="status-indicator" id="status-indicator">
+                <span class="status-dot"></span>
+                <span class="status-text" id="status-text">Connecting...</span>
+            </div>
+        </div>
+
+        <!-- Credit Balance (Main Feature) -->
+        <div class="card credit-card">
+            <h2>Credit Balance</h2>
+            <div class="credit-balance" id="credit-balance">
+                <span class="amount">---</span>
+                <span class="label">credits</span>
+            </div>
+            <div class="credit-stats">
+                <div class="stat">
+                    <span class="stat-label">Earned</span>
+                    <span class="stat-value" id="credits-earned">---</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Spent</span>
+                    <span class="stat-value" id="credits-spent">---</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Earning/Spending Rates -->
+        <div class="card rates-card">
+            <h3>Rates (per hour)</h3>
+            <div class="rates">
+                <div class="rate">
+                    <span class="rate-label">⬆️ Earning</span>
+                    <span class="rate-value earning" id="earning-rate">---</span>
+                </div>
+                <div class="rate">
+                    <span class="rate-label">⬇️ Spending</span>
+                    <span class="rate-value spending" id="spending-rate">---</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Network Stats -->
+        <div class="card network-card">
+            <h3>Network Status</h3>
+            <div class="network-stats">
+                <div class="stat-row">
+                    <span class="stat-label">Peers</span>
+                    <span class="stat-value" id="peer-count">---</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Active Peers</span>
+                    <span class="stat-value" id="active-peers">---</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Circuits</span>
+                    <span class="stat-value" id="circuits">---</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Active Circuits</span>
+                    <span class="stat-value" id="active-circuits">---</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Bandwidth</span>
+                    <span class="stat-value" id="bandwidth">---</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Node ID -->
+        <div class="node-id">
+            <span class="node-id-label">Node ID:</span>
+            <span class="node-id-value" id="node-id">---</span>
+        </div>
+
+        <!-- Refresh Button -->
+        <button class="refresh-button" id="refresh-button">
+            <span class="refresh-icon">↻</span>
+            Refresh
+        </button>
+
+        <!-- Error Display -->
+        <div class="error-message" id="error-message" style="display: none;">
+            <span class="error-icon">⚠️</span>
+            <span class="error-text" id="error-text"></span>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p>Only .anon domains are allowed</p>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
