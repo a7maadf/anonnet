@@ -1,0 +1,6 @@
+<!-- AnonNet Browser Branding DTD -->
+
+<!ENTITY  brandShortName        "AnonNet">
+<!ENTITY  brandFullName         "AnonNet Browser">
+<!ENTITY  vendorShortName       "AnonNet">
+<!ENTITY  trademarkInfo.part1   "AnonNet Browser and the AnonNet logos are trademarks of the AnonNet Project.">

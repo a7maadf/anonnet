@@ -1,0 +1,45 @@
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <!-- AnonNet Browser Icon -->
+  <!-- Three concentric circles representing the multi-hop anonymous network -->
+
+  <!-- Background gradient -->
+  <defs>
+    <linearGradient id="bg-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+    </linearGradient>
+
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="128" cy="128" r="120" fill="url(#bg-gradient)"/>
+
+  <!-- Outer ring (Entry node) -->
+  <circle cx="128" cy="128" r="100" fill="none" stroke="#ffffff" stroke-width="6" opacity="0.9" filter="url(#glow)"/>
+
+  <!-- Middle ring (Relay node) -->
+  <circle cx="128" cy="128" r="70" fill="none" stroke="#ffffff" stroke-width="6" opacity="0.9" filter="url(#glow)"/>
+
+  <!-- Inner ring (Exit node) -->
+  <circle cx="128" cy="128" r="40" fill="none" stroke="#ffffff" stroke-width="6" opacity="0.9" filter="url(#glow)"/>
+
+  <!-- Center dot (User/Service) -->
+  <circle cx="128" cy="128" r="18" fill="#ffffff" filter="url(#glow)"/>
+
+  <!-- Decorative connection lines -->
+  <line x1="128" y1="28" x2="128" y2="58" stroke="#ffffff" stroke-width="3" opacity="0.6"/>
+  <line x1="128" y1="198" x2="128" y2="228" stroke="#ffffff" stroke-width="3" opacity="0.6"/>
+  <line x1="28" y1="128" x2="58" y2="128" stroke="#ffffff" stroke-width="3" opacity="0.6"/>
+  <line x1="198" y1="128" x2="228" y2="128" stroke="#ffffff" stroke-width="3" opacity="0.6"/>
+
+  <!-- .anon text -->
+  <text x="128" y="250" font-family="Arial, sans-serif" font-size="20" font-weight="bold"
+        text-anchor="middle" fill="#ffffff" opacity="0.9">.anon</text>
+</svg>

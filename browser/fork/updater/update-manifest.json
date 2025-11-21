@@ -1,0 +1,42 @@
+{
+  "version": "1.0.0",
+  "builds": [
+    {
+      "version": "1.0.0",
+      "platform": "linux",
+      "architecture": "x86_64",
+      "url": "https://github.com/a7maadf/anonnet/releases/download/browser-v1.0.0/anonnet-browser-1.0.0-linux-x86_64.tar.gz",
+      "hash": "sha256:PLACEHOLDER_HASH",
+      "size": 0,
+      "releaseDate": "2025-11-21",
+      "releaseNotes": "https://github.com/a7maadf/anonnet/releases/tag/browser-v1.0.0",
+      "critical": false
+    },
+    {
+      "version": "1.0.0",
+      "platform": "darwin",
+      "architecture": "x86_64",
+      "url": "https://github.com/a7maadf/anonnet/releases/download/browser-v1.0.0/anonnet-browser-1.0.0-darwin-x86_64.dmg",
+      "hash": "sha256:PLACEHOLDER_HASH",
+      "size": 0,
+      "releaseDate": "2025-11-21",
+      "releaseNotes": "https://github.com/a7maadf/anonnet/releases/tag/browser-v1.0.0",
+      "critical": false
+    },
+    {
+      "version": "1.0.0",
+      "platform": "windows",
+      "architecture": "x86_64",
+      "url": "https://github.com/a7maadf/anonnet/releases/download/browser-v1.0.0/anonnet-browser-1.0.0-windows-x86_64.zip",
+      "hash": "sha256:PLACEHOLDER_HASH",
+      "size": 0,
+      "releaseDate": "2025-11-21",
+      "releaseNotes": "https://github.com/a7maadf/anonnet/releases/tag/browser-v1.0.0",
+      "critical": false
+    }
+  ],
+  "minDaemonVersion": "0.1.0",
+  "compatibilityNotes": {
+    "1.0.0": "Initial release. Requires AnonNet daemon v0.1.0 or higher."
+  }
+}

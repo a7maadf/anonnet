@@ -305,3 +305,102 @@ async function updateBadge() {
 // Update badge every 10 seconds
 setInterval(updateBadge, 10000);
 updateBadge(); // Initial update
+
+/******************************************************************************
+ * CREDIT MONITORING & WARNINGS
+ ******************************************************************************/
+
+let lastCreditBalance = null;
+let hasShownLowCreditWarning = false;
+let hasShownCriticalCreditWarning = false;
+
+// Credit warning thresholds (can be configured in about:config)
+const LOW_CREDIT_THRESHOLD = 100;
+const CRITICAL_CREDIT_THRESHOLD = 50;
+const ZERO_CREDIT_THRESHOLD = 10;
+
+async function checkCreditBalance() {
+    try {
+        if (!discoveredPort) {
+            discoveredPort = await discoverApiPort();
+        }
+
+        if (!discoveredPort) return;
+
+        const response = await fetch(`http://127.0.0.1:${discoveredPort}/api/credits/stats`);
+        if (!response.ok) return;
+
+        const data = await response.json();
+        const balance = data.balance;
+
+        // Update last known balance
+        if (lastCreditBalance === null) {
+            lastCreditBalance = balance;
+            return; // Skip warnings on first check
+        }
+
+        // Critical: Nearly out of credits
+        if (balance <= ZERO_CREDIT_THRESHOLD && !hasShownCriticalCreditWarning) {
+            showCriticalCreditWarning(balance);
+            hasShownCriticalCreditWarning = true;
+        }
+        // Warning: Low credits
+        else if (balance <= CRITICAL_CREDIT_THRESHOLD && !hasShownCriticalCreditWarning) {
+            showCriticalCreditWarning(balance);
+            hasShownCriticalCreditWarning = true;
+            hasShownLowCreditWarning = true; // Skip low warning
+        }
+        // Info: Credits running low
+        else if (balance <= LOW_CREDIT_THRESHOLD && !hasShownLowCreditWarning) {
+            showLowCreditWarning(balance);
+            hasShownLowCreditWarning = true;
+        }
+
+        // Reset warnings if credits increase significantly
+        if (balance > LOW_CREDIT_THRESHOLD) {
+            hasShownLowCreditWarning = false;
+            hasShownCriticalCreditWarning = false;
+        }
+
+        lastCreditBalance = balance;
+
+    } catch (error) {
+        console.error('Error checking credit balance:', error);
+    }
+}
+
+function showLowCreditWarning(balance) {
+    browser.notifications.create('low-credits', {
+        type: 'basic',
+        iconUrl: browser.runtime.getURL('icons/icon-48.png'),
+        title: 'AnonNet: Low Credits',
+        message: `You have ${balance} credits remaining. Consider running as a relay to earn more credits.`,
+        priority: 1
+    });
+}
+
+function showCriticalCreditWarning(balance) {
+    browser.notifications.create('critical-credits', {
+        type: 'basic',
+        iconUrl: browser.runtime.getURL('icons/icon-48.png'),
+        title: 'AnonNet: Critical - Nearly Out of Credits!',
+        message: `WARNING: Only ${balance} credits left! Your connection may be interrupted. Run as a relay or mine credits immediately.`,
+        priority: 2,
+        requireInteraction: true // Keep notification visible until user dismisses
+    });
+
+    // Also update badge to show warning
+    browser.browserAction.setBadgeText({ text: '⚠️' });
+    browser.browserAction.setBadgeBackgroundColor({ color: '#ff9800' });
+}
+
+// Check credits every 30 seconds
+setInterval(checkCreditBalance, 30000);
+checkCreditBalance(); // Initial check
+
+// Handle notification clicks (open extension popup)
+browser.notifications.onClicked.addListener((notificationId) => {
+    if (notificationId === 'low-credits' || notificationId === 'critical-credits') {
+        browser.browserAction.openPopup();
+    }
+});
